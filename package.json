@@ -4,7 +4,7 @@
   "description": "Keyless source resolver utilities for extracting artwork token coordinates from marketplace inputs.",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/feral-file/ff-source-resolver.git"
+    "url": "git+https://github.com/feral-file/ff-source-resolver.git"
   },
   "bugs": {
     "url": "https://github.com/feral-file/ff-source-resolver/issues"
@@ -13,9 +13,13 @@
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "files": [
-    "dist",
+    "dist/src",
+    "LICENSE",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
