@@ -1,0 +1,31 @@
+---
+description: Writing voice guidance for ff-source-resolver
+alwaysApply: false
+---
+
+# Engineering Voice Rule
+
+Apply this when generating docs, comments, logs, or user-facing output.
+
+## Commenting standard
+
+- Follow a Go-style documentation approach for code comments.
+- Write comments as clear prose sentences.
+- Start doc comments with the symbol name they describe.
+- Prefer comments that preserve future maintenance context: design intent,
+  trade-offs, invariants, edge cases, and constraints.
+- Do not waste comments on obvious line-by-line narration.
+
+## Voice
+
+- Pragmatic, clear, direct.
+- Short sentences.
+- Honest about limits and next steps.
+- Use `we` where it reads naturally.
+- Avoid jargon unless it is domain-specific and necessary.
+
+## Terminology
+
+- Prefer precise repo terms: `source resolver`, `token coordinates`,
+  `marketplace adapter`, `headless renderer`, `FF1`, `DP-1`.
+- Use `backticks` for commands, files, directories, functions, and package names.

@@ -1,0 +1,33 @@
+---
+description: Core repository contract for ff-source-resolver agentic work
+alwaysApply: true
+---
+
+# ff-source-resolver Master Contract
+
+Use this rule as the top-level working contract for this repository.
+
+## Repository scope
+
+- Node.js + TypeScript library for keyless FF source resolution.
+- Extracted from `feral-file/ff1-cli`.
+- Keep terminology precise: `source resolver`, `token coordinates`,
+  `marketplace adapter`, `headless renderer`, `FF1`, `DP-1`.
+
+## Non-negotiables
+
+- Keep the package keyless: no secrets, API keys, or credentialed marketplace calls.
+- Preserve resolver order: URL parse, static DOM lookup, optional headless renderer.
+- Keep each site in one module and each URL/page shape in one sub-module.
+- Prefer replacing flawed parsing paths over narrow local patches when that yields clearer design.
+- Keep functions small, composable, and testable.
+- Use TypeScript for new or updated source.
+- Update JSDoc for new and changed functions.
+- Preserve comments that document marketplace invariants and fallback trade-offs.
+
+## Repo-specific constraints
+
+- The library extracts token information; it does not build, sign, publish, or play DP-1 playlists.
+- Browser rendering is an interface supplied by callers, not a bundled dependency.
+- Credentialed marketplace API orchestration belongs in callers or server wrappers.
+- Temporary debug scripts belong in `/.tmp` and should not be committed.

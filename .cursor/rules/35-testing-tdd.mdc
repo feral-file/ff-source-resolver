@@ -1,0 +1,33 @@
+---
+description: TDD workflow and verification gates for ff-source-resolver
+alwaysApply: true
+---
+
+# Testing and Verification Rule
+
+## Required sequence
+
+1. Write or update focused tests first when behavior changes.
+2. Implement until tests pass.
+3. Refactor while keeping tests green.
+4. Run verification before handoff or completion.
+
+## Constraints
+
+- Do not ship behavior changes without test coverage unless there is a clear,
+  explicit reason.
+- Prefer unit tests for parsing and resolver order.
+- Use live fixture tests for known marketplace URL drift.
+- Treat missing or failing tests as part of the work, not follow-up work.
+
+## Required verification command
+
+```bash
+npm run verify
+```
+
+For URL drift checks:
+
+```bash
+npm run test:live
+```

@@ -1,0 +1,30 @@
+---
+description: Spec-driven workflow for substantial ff-source-resolver changes
+alwaysApply: true
+---
+
+# Spec-Driven Development Rule
+
+Apply this rule for large features, major flow changes, broad refactors, and
+architectural work.
+
+## Required planning workflow
+
+1. Read `AGENTS.md`.
+2. Read the relevant source files and tests for the affected adapters.
+3. Summarize the current behavior, constraints, and invariants.
+4. Write or update a short design note in the handoff if no formal artifact exists.
+5. Break the work into concrete tasks.
+6. Identify expected behaviors and verification steps.
+7. Add or update tests before implementation where behavior changes.
+8. Then implement and verify.
+
+Canonical sequence:
+
+`spec -> design -> tasks -> tests -> implementation -> verification`
+
+## Enforcement
+
+- Do not start large changes without first summarizing the current state.
+- Preserve important design constraints in comments near affected logic.
+- Keep `ff-cli` compatibility in mind because this package was extracted from that repo.

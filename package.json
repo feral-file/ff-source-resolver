@@ -1,0 +1,40 @@
+{
+  "name": "@feralfile/source-resolver",
+  "version": "0.0.0",
+  "description": "Keyless source resolver utilities for extracting artwork token coordinates from marketplace inputs.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/feral-file/ff-source-resolver.git"
+  },
+  "bugs": {
+    "url": "https://github.com/feral-file/ff-source-resolver/issues"
+  },
+  "homepage": "https://github.com/feral-file/ff-source-resolver#readme",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "test": "npm run test:unit",
+    "test:unit": "npm run build && node --test dist/tests/source-resolver.test.js",
+    "test:live": "npm run build && RUN_LIVE_RESOLVER_TESTS=1 node --test dist/tests/live-token-urls.test.js",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
+    "verify": "npm run typecheck && npm run test:unit"
+  },
+  "keywords": [
+    "feralfile",
+    "nft",
+    "source-resolver"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.7.1",
+    "typescript": "^5.9.3"
+  }
+}
