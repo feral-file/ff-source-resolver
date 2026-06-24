@@ -2,10 +2,6 @@
 
 Keyless FF tooling package for extracting artwork token coordinates from source inputs.
 
-This library was extracted from `feral-file/ff1-cli` so the CLI, app/server
-flows, and future automation can share one source grammar for marketplace URLs
-and raw token coordinates.
-
 ## Scope
 
 `@feralfile/source-resolver` resolves user-supplied source identifiers into
