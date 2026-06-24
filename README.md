@@ -59,5 +59,6 @@ Run known real-world URL fixtures:
 npm run test:live
 ```
 
-The live fixture suite uses stable, known marketplace URLs and checks resolver
-behavior. It does not require marketplace API keys.
+The live fixture suite uses URLs confirmed in the in-app browser, follows
+redirects where marketplaces expose them over HTTP, checks for disappearing
+pages, and verifies resolver behavior. It does not require marketplace API keys.

@@ -16,6 +16,8 @@ const RUN_LIVE = process.env.RUN_LIVE_RESOLVER_TESTS === '1';
 interface TokenUrlFixture {
   source: string;
   url: string;
+  requestedUrl?: string;
+  acceptedFinalUrls?: string[];
   expected: TokenCoords;
   browserNote: string;
 }
@@ -34,6 +36,7 @@ const TOKEN_URL_FIXTURES: TokenUrlFixture[] = [
   {
     source: 'opensea',
     url: 'https://opensea.io/item/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1',
+    requestedUrl: 'https://opensea.io/assets/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1',
     expected: {
       chain: 'ethereum',
       contract: '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d',
@@ -64,6 +67,7 @@ const TOKEN_URL_FIXTURES: TokenUrlFixture[] = [
   {
     source: 'artblocks',
     url: 'https://www.artblocks.io/token/1/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/13000000',
+    requestedUrl: 'https://www.artblocks.io/token/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270-13000000',
     expected: {
       chain: 'ethereum',
       contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
@@ -74,6 +78,11 @@ const TOKEN_URL_FIXTURES: TokenUrlFixture[] = [
   {
     source: 'fxhash',
     url: 'https://www.fxhash.xyz/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
+    requestedUrl: 'https://www.fxhash.xyz/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
+    acceptedFinalUrls: [
+      'https://www.fxhash.xyz/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
+      'https://www.fxhash.xyz/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
+    ],
     expected: {
       chain: 'tezos',
       contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
@@ -85,6 +94,16 @@ const TOKEN_URL_FIXTURES: TokenUrlFixture[] = [
 
 describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
   for (const fixture of TOKEN_URL_FIXTURES) {
+    test(`${fixture.source}: browsed URL remains reachable`, async () => {
+      const response = await fetchTokenPage(fixture.requestedUrl ?? fixture.url);
+      assert.notEqual(response.status, 404, fixture.browserNote);
+      assert.ok(response.status < 500, `${fixture.source} returned ${response.status}`);
+      assert.ok(
+        acceptedFinalUrls(fixture).includes(normalizeUrl(response.url)),
+        `${fixture.source} resolved to unexpected URL ${response.url}`
+      );
+    });
+
     test(`${fixture.source}: parseFindInput extracts token coordinates`, () => {
       const result = parseFindInput(fixture.url);
       assert.equal(result?.kind, 'token', fixture.browserNote);
@@ -110,3 +129,40 @@ describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
     });
   }
 });
+
+/**
+ * fetchTokenPage requests a marketplace token page with browser-like headers.
+ * The live suite is allowed to observe anti-bot 403s, but redirects and 404s
+ * still expose useful URL-drift regressions for the resolver fixtures.
+ */
+async function fetchTokenPage(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    },
+    redirect: 'follow',
+  });
+}
+
+/**
+ * normalizeUrl compares only the canonical page identity. Search parameters and
+ * hashes commonly carry analytics state and should not fail URL drift checks.
+ */
+function normalizeUrl(value: string): string {
+  const url = new URL(value);
+  const pathname = url.pathname.endsWith('/') && url.pathname !== '/' ? url.pathname.slice(0, -1) : url.pathname;
+  return `${url.origin}${pathname}`;
+}
+
+/**
+ * acceptedFinalUrls returns the URL identities allowed by a live fixture.
+ * Some marketplaces use client-side routing to move legacy URLs, so HTTP fetch
+ * can stop at a still-valid legacy route while the browser shows a new route.
+ */
+function acceptedFinalUrls(fixture: TokenUrlFixture): string[] {
+  return (fixture.acceptedFinalUrls ?? [fixture.url]).map(normalizeUrl);
+}
