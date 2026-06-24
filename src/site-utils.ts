@@ -1,5 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from './types';
-import { extractTokenFromText, hasHostMatch } from './helpers';
+import { extractTokenFromText, hasHostMatch, normalizeParsedFindInput } from './helpers';
 
 /**
  * matchSite returns the adapter for a URL host, if the host is supported.
@@ -22,5 +22,5 @@ export function htmlTokenResult(
   if (!coords) {
     return null;
   }
-  return { kind: 'token', source: adapter.source, coords };
+  return normalizeParsedFindInput({ kind: 'token', source: adapter.source, coords });
 }

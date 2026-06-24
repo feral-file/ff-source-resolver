@@ -208,7 +208,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
   {
     source: 'superrare',
     page: 'artwork',
-    url: 'https://superrare.com/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/1',
+    url: 'https://superrare.com/artwork/eth/0x3e930455dcbf4bc69de9926bdaf8ef782398786f/1',
     expected: {
       kind: 'token',
       source: 'superrare',
@@ -223,7 +223,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
   {
     source: 'superrare',
     page: 'collection',
-    url: 'https://superrare.com/collection/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f',
+    url: 'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
     expected: { kind: 'unsupported', reasonIncludes: '/collection/' },
     browserNote: 'Browser title: SuperRare.',
   },

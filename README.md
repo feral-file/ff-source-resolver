@@ -31,6 +31,24 @@ The parser currently recognizes:
 - raw `ethereum:{contract}:{tokenId}` and `tezos:{contract}:{tokenId}` inputs
 - Ethereum and Tezos wallet addresses for caller-side catalog lookup
 
+## Validation Utilities
+
+The package exports helpers for callers that need to preflight source identity
+before resolving:
+
+- `isValidChain`
+- `isValidContractAddress`
+- `isValidTokenId`
+- `isValidTokenCoords`
+- `isValidWalletAddress`
+- `normalizeContractAddress`
+- `normalizeTokenCoords`
+
+Validation is chain-specific. Ethereum contracts use 20-byte EVM address
+construction and enforce EIP-55 checksum casing when mixed-case input is
+provided. Tezos contracts must be valid KT1 Base58Check addresses. Ethereum
+token ids must fit `uint256`; Tezos token ids are validated as decimal nats.
+
 ## Resolver Order
 
 `resolveTokenInfo` follows the required fallback order:

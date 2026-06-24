@@ -1,4 +1,5 @@
 import type { ParsedFindInput } from '../../../types';
+import { sourceTokenResult } from '../../../helpers';
 
 /**
  * parseVerseItem parses Verse item pages whose path contains Ethereum token
@@ -7,11 +8,7 @@ import type { ParsedFindInput } from '../../../types';
 export function parseVerseItem(url: URL): ParsedFindInput | null {
   let m = /^\/items\/ethereum\/(0x[a-fA-F0-9]{40})\/(\d+)\/?$/.exec(url.pathname);
   if (m) {
-    return {
-      kind: 'token',
-      source: 'verse',
-      coords: { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] },
-    };
+    return sourceTokenResult('verse', 'ethereum', m[1], m[2]);
   }
   m = /^\/items\/([^/]+)\//.exec(url.pathname);
   if (m) {

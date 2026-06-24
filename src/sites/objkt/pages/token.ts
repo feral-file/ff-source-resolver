@@ -1,4 +1,5 @@
 import type { ParsedFindInput } from '../../../types';
+import { sourceTokenResult } from '../../../helpers';
 
 /**
  * parseObjktToken parses Objkt token pages that encode a Tezos contract and
@@ -9,11 +10,7 @@ import type { ParsedFindInput } from '../../../types';
 export function parseObjktToken(url: URL): ParsedFindInput | null {
   const direct = /^\/(?:tokens|asset)\/(KT[A-Za-z0-9]+)\/(\d+)\/?$/.exec(url.pathname);
   if (direct) {
-    return {
-      kind: 'token',
-      source: 'objkt',
-      coords: { chain: 'tezos', contract: direct[1], tokenId: direct[2] },
-    };
+    return sourceTokenResult('objkt', 'tezos', direct[1], direct[2]);
   }
   const alias = /^\/(?:tokens|asset)\/([a-zA-Z][a-zA-Z0-9_-]*)\/(\d+)\/?$/.exec(url.pathname);
   if (alias) {

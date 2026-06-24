@@ -1,26 +1,64 @@
-import type { IndexerChain, TokenCoords } from './types';
+import type { IndexerChain, MarketplaceSource, ParsedFindInput, TokenCoords } from './types';
+import {
+  isValidTokenId,
+  isValidWalletAddress,
+  normalizeTokenCoords,
+} from './validation';
 
-export const ETH_ADDR = /^0x[a-fA-F0-9]{40}$/;
-export const TEZOS_ADDR = /^(tz1|tz2|tz3)[1-9A-HJ-NP-Za-km-z]{33}$/;
 export const RAW_COORDS = /^(ethereum|tezos):([^:]+):([^:]+)$/i;
 
 /**
- * normalizeContract normalizes EVM contracts while preserving Tezos base58
- * casing. Tezos addresses are case-sensitive; lowercasing them breaks lookup.
- */
-export function normalizeContract(contract: string): string {
-  return contract.startsWith('0x') ? contract.toLowerCase() : contract;
-}
-
-/**
- * tokenResult builds the CLI-compatible parse result used by adapters.
+ * tokenResult builds a token parse result only when the chain-specific
+ * contract and token id are valid.
  */
 export function tokenResult(
   chain: IndexerChain,
   contract: string,
   tokenId: string
-): { kind: 'token'; coords: TokenCoords } {
-  return { kind: 'token', coords: { chain, contract: normalizeContract(contract), tokenId } };
+): { kind: 'token'; coords: TokenCoords } | null {
+  const coords = normalizeTokenCoords({ chain, contract, tokenId });
+  return coords ? { kind: 'token', coords } : null;
+}
+
+/**
+ * sourceTokenResult builds a marketplace-scoped token parse result only after
+ * chain-specific coordinate validation.
+ */
+export function sourceTokenResult(
+  source: MarketplaceSource,
+  chain: IndexerChain,
+  contract: string,
+  tokenId: string
+): ParsedFindInput | null {
+  const result = tokenResult(chain, contract, tokenId);
+  return result ? { ...result, source } : null;
+}
+
+/**
+ * normalizeParsedFindInput validates and normalizes token, address, and
+ * alias-token findings before they leave parser or resolver paths.
+ */
+export function normalizeParsedFindInput(result: ParsedFindInput | null): ParsedFindInput | null {
+  if (!result) {
+    return null;
+  }
+  if (result.kind === 'token') {
+    const coords = normalizeTokenCoords(result.coords);
+    return coords ? { ...result, coords } : null;
+  }
+  if (result.kind === 'address') {
+    if (!isValidWalletAddress(result.chain, result.address)) {
+      return null;
+    }
+    return {
+      ...result,
+      address: result.chain === 'ethereum' ? result.address.toLowerCase() : result.address,
+    };
+  }
+  if (result.kind === 'objkt-alias' && !isValidTokenId('tezos', result.tokenId)) {
+    return null;
+  }
+  return result;
 }
 
 /**
@@ -36,52 +74,54 @@ export function hasHostMatch(host: string, hosts: readonly string[]): boolean {
  *
  * This helper is intentionally conservative and only recognizes URL/path
  * shapes that already encode chain, contract, and token id. Site adapters own
- * when this fallback is safe to run for their pages.
+ * when this fallback is safe to run for their pages. EVM addresses found in
+ * rendered marketplace HTML are lowercased before validation because some
+ * sites emit non-checksum display casing while preserving the 20-byte address.
  */
 export function extractTokenFromText(text: string): TokenCoords | null {
   let m = /\bethereum:(0x[a-fA-F0-9]{40}):(\d+)\b/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\btezos:(KT[A-Za-z0-9]+):(\d+)\b/.exec(text);
   if (m) {
-    return { chain: 'tezos', contract: m[1], tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'tezos', contract: m[1], tokenId: m[2] });
   }
   m = /\/items\/ethereum\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\/(?:assets|item)\/ethereum\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\/artwork\/eth\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\/token\/(0x[a-fA-F0-9]{40})-(\d+)/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\/token\/\d+\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\/(?:tokens|asset)\/(KT[A-Za-z0-9]+)\/(\d+)/.exec(text);
   if (m) {
-    return { chain: 'tezos', contract: m[1], tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'tezos', contract: m[1], tokenId: m[2] });
   }
   m = /\/token\/ethereum\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
   if (m) {
-    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] });
   }
   m = /\/token\/tezos\/(KT[A-Za-z0-9]+)\/(\d+)/.exec(text);
   if (m) {
-    return { chain: 'tezos', contract: m[1], tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'tezos', contract: m[1], tokenId: m[2] });
   }
   m = /\/gentk\/FX1-(KT[A-Za-z0-9]+)-(\d+)/.exec(text);
   if (m) {
-    return { chain: 'tezos', contract: m[1], tokenId: m[2] };
+    return normalizeTokenCoords({ chain: 'tezos', contract: m[1], tokenId: m[2] });
   }
   return null;
 }

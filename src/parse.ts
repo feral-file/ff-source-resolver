@@ -1,7 +1,8 @@
-import { ETH_ADDR, RAW_COORDS, TEZOS_ADDR, normalizeContract } from './helpers';
+import { RAW_COORDS, normalizeParsedFindInput } from './helpers';
 import { matchSite } from './site-utils';
 import { siteAdapters } from './sites';
 import type { ParsedFindInput } from './types';
+import { isValidWalletAddress, normalizeTokenCoords } from './validation';
 
 /**
  * parseFindInput parses any source input understood by the FF find flow.
@@ -16,24 +17,28 @@ export function parseFindInput(input: string): ParsedFindInput | null {
     return null;
   }
 
-  if (ETH_ADDR.test(trimmed)) {
+  if (isValidWalletAddress('ethereum', trimmed)) {
     return { kind: 'address', chain: 'ethereum', address: trimmed.toLowerCase() };
   }
-  if (TEZOS_ADDR.test(trimmed)) {
+  if (isValidWalletAddress('tezos', trimmed)) {
     return { kind: 'address', chain: 'tezos', address: trimmed };
   }
 
   const rawMatch = RAW_COORDS.exec(trimmed);
   if (rawMatch) {
-    return {
-      kind: 'token',
-      source: 'raw',
-      coords: {
-        chain: rawMatch[1].toLowerCase() as 'ethereum' | 'tezos',
-        contract: normalizeContract(rawMatch[2]),
-        tokenId: rawMatch[3],
-      },
-    };
+    const chain = rawMatch[1].toLowerCase() as 'ethereum' | 'tezos';
+    const coords = normalizeTokenCoords({
+      chain,
+      contract: rawMatch[2],
+      tokenId: rawMatch[3],
+    });
+    return coords
+      ? {
+          kind: 'token',
+          source: 'raw',
+          coords,
+        }
+      : null;
   }
 
   let parsedUrl: URL;
@@ -56,5 +61,5 @@ export function parseMarketplaceUrl(url: URL): ParsedFindInput | null {
   if (!site) {
     return null;
   }
-  return site.parseUrl(url);
+  return normalizeParsedFindInput(site.parseUrl(url));
 }

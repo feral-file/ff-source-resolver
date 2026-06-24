@@ -47,7 +47,7 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
   },
   {
     name: 'SuperRare collection renders artwork links client-side',
-    url: 'https://superrare.com/collection/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f',
+    url: 'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
     expectedMethod: 'headless',
     expectedSource: 'superrare',
     expectedCoords: {

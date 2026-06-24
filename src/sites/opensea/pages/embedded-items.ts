@@ -1,4 +1,5 @@
 import type { ParsedFindInput } from '../../../types';
+import { sourceTokenResult } from '../../../helpers';
 
 interface Candidate {
   chain: string;
@@ -47,9 +48,5 @@ export function extractOpenSeaEmbeddedItems(html: string): ParsedFindInput | nul
   if (!best || best.chain !== 'ethereum') {
     return null;
   }
-  return {
-    kind: 'token',
-    source: 'opensea',
-    coords: { chain: 'ethereum', contract: best.contract, tokenId: best.tokenId.toString() },
-  };
+  return sourceTokenResult('opensea', 'ethereum', best.contract, best.tokenId.toString());
 }

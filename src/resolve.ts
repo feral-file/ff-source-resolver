@@ -1,3 +1,4 @@
+import { normalizeParsedFindInput } from './helpers';
 import { parseFindInput } from './parse';
 import { matchSite } from './site-utils';
 import { siteAdapters } from './sites';
@@ -34,7 +35,7 @@ export async function resolveTokenInfo(
 
   const fetched = await fetchStaticHtml(url, options.fetch);
   if (fetched) {
-    const domParsed = site.extractFromHtml(url, fetched);
+    const domParsed = normalizeParsedFindInput(site.extractFromHtml(url, fetched));
     if (domParsed?.kind === 'token') {
       return { kind: 'token', method: 'dom', source: domParsed.source, coords: domParsed.coords };
     }
@@ -43,7 +44,7 @@ export async function resolveTokenInfo(
   if (options.renderer) {
     const rendered = await options.renderer.render(url.toString());
     if (rendered) {
-      const renderedParsed = site.extractFromHtml(url, rendered);
+      const renderedParsed = normalizeParsedFindInput(site.extractFromHtml(url, rendered));
       if (renderedParsed?.kind === 'token') {
         return {
           kind: 'token',

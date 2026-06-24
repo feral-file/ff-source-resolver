@@ -1,12 +1,102 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { parseFindInput, resolveFindInput, resolveTokenInfo } from '../src';
+import {
+  isValidChain,
+  isValidContractAddress,
+  isValidTokenCoords,
+  isValidTokenId,
+  isValidWalletAddress,
+  normalizeContractAddress,
+  normalizeTokenCoords,
+  parseFindInput,
+  resolveFindInput,
+  resolveTokenInfo,
+} from '../src';
 import type { HeadlessPageRenderer } from '../src';
 
 const ETH_CONTRACT = '0xababababab20053426ad1c782de9ea8444358070';
 const TEZOS_CONTRACT = 'KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton';
+const INVALID_TEZOS_CONTRACT = 'KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxto1';
 const OPENSEA_COLLECTION_CONTRACT = '0xe293247b582759495d0320ee8a87f598cc052c5b';
 const OPENSEA_STRAY_CONTRACT = '0x1111111111111111111111111111111111111111';
+const UINT256_MAX = '115792089237316195423570985008687907853269984665640564039457584007913129639935';
+
+describe('validation utilities', () => {
+  test('validates supported chains', () => {
+    assert.equal(isValidChain('ethereum'), true);
+    assert.equal(isValidChain('tezos'), true);
+    assert.equal(isValidChain('polygon'), false);
+  });
+
+  test('validates Ethereum contracts with EIP-55 checksum casing', () => {
+    const validChecksummed = [
+      '0x52908400098527886E0F7030069857D2E4169EE7',
+      '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+      '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359',
+      '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB',
+      '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb',
+    ];
+    for (const address of validChecksummed) {
+      assert.equal(isValidContractAddress('ethereum', address), true, address);
+    }
+    assert.equal(
+      isValidContractAddress('ethereum', '0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'),
+      false
+    );
+    assert.equal(isValidContractAddress('ethereum', ETH_CONTRACT), true);
+  });
+
+  test('validates wallet addresses for raw address lookup', () => {
+    assert.equal(isValidWalletAddress('ethereum', '0xf3860788d1597cecf938424baabe976fac87dc26'), true);
+    assert.equal(isValidWalletAddress('tezos', 'tz1fQTvvcCy5PTt8HcUSQTu64dH9mJjjDudi'), true);
+    assert.equal(isValidWalletAddress('tezos', TEZOS_CONTRACT), false);
+  });
+
+  test('validates Tezos KT1 contracts with Base58Check checksum', () => {
+    assert.equal(isValidContractAddress('tezos', TEZOS_CONTRACT), true);
+    assert.equal(isValidContractAddress('tezos', INVALID_TEZOS_CONTRACT), false);
+    assert.equal(isValidContractAddress('tezos', 'tz1fQTvvcCy5PTt8HcUSQTu64dH9mJjjDudi'), false);
+  });
+
+  test('validates token ids by chain', () => {
+    assert.equal(isValidTokenId('ethereum', UINT256_MAX), true);
+    assert.equal(isValidTokenId('ethereum', (BigInt(UINT256_MAX) + 1n).toString()), false);
+    assert.equal(isValidTokenId('tezos', (BigInt(UINT256_MAX) + 1n).toString()), true);
+    assert.equal(isValidTokenId('tezos', '-1'), false);
+  });
+
+  test('validates full token coordinate tuples', () => {
+    assert.equal(
+      isValidTokenCoords({ chain: 'tezos', contract: TEZOS_CONTRACT, tokenId: '9201' }),
+      true
+    );
+    assert.equal(
+      isValidTokenCoords({ chain: 'tezos', contract: INVALID_TEZOS_CONTRACT, tokenId: '9201' }),
+      false
+    );
+  });
+
+  test('normalizes validated contract addresses and token coordinates', () => {
+    assert.equal(
+      normalizeContractAddress('ethereum', '0x5AEDA56215b167893e80B4fE645BA6d5Bab767DE'),
+      '0x5aeda56215b167893e80b4fe645ba6d5bab767de'
+    );
+    assert.equal(normalizeContractAddress('tezos', TEZOS_CONTRACT), TEZOS_CONTRACT);
+    assert.deepEqual(
+      normalizeTokenCoords({
+        chain: 'ethereum',
+        contract: '0x5AEDA56215b167893e80B4fE645BA6d5Bab767DE',
+        tokenId: '0001',
+      }),
+      {
+        chain: 'ethereum',
+        contract: '0x5aeda56215b167893e80b4fe645ba6d5bab767de',
+        tokenId: '0001',
+      }
+    );
+    assert.equal(normalizeContractAddress('tezos', INVALID_TEZOS_CONTRACT), null);
+  });
+});
 
 describe('parseFindInput', () => {
   test('Ethereum wallet address parses to address kind', () => {
@@ -51,6 +141,15 @@ describe('parseFindInput', () => {
     assert.equal(result.coords.contract, TEZOS_CONTRACT);
   });
 
+  test('raw coordinates reject invalid contracts and token ids', () => {
+    assert.equal(parseFindInput(`tezos:${INVALID_TEZOS_CONTRACT}:9201`), null);
+    assert.equal(parseFindInput(`ethereum:${ETH_CONTRACT}:${BigInt(UINT256_MAX) + 1n}`), null);
+  });
+
+  test('raw address lookup rejects invalid Tezos checksums', () => {
+    assert.equal(parseFindInput('tz1fQTvvcCy5PTt8HcUSQTu64dH9mJjjDud1'), null);
+  });
+
   test('Objkt token URL parses in the Objkt token page module', () => {
     const result = parseFindInput(`https://objkt.com/tokens/${TEZOS_CONTRACT}/9201`);
     assert.equal(result?.kind, 'token');
@@ -78,6 +177,11 @@ describe('parseFindInput', () => {
 
   test('Objkt collection URL remains unsupported', () => {
     const result = parseFindInput('https://objkt.com/collections/KT1Whatever');
+    assert.equal(result?.kind, 'unsupported');
+  });
+
+  test('Objkt token URL with invalid KT1 checksum remains unsupported', () => {
+    const result = parseFindInput(`https://objkt.com/tokens/${INVALID_TEZOS_CONTRACT}/9201`);
     assert.equal(result?.kind, 'unsupported');
   });
 
@@ -232,9 +336,16 @@ describe('parseFindInput', () => {
     assert.ok(result.reason.includes('matic'));
   });
 
+  test('Ethereum token URL with invalid mixed-case checksum remains unsupported', () => {
+    const result = parseFindInput(
+      'https://superrare.com/artwork/eth/0x5AAeb6053F3E94C9b9A09f33669435E7Ef1BeAed/1'
+    );
+    assert.equal(result?.kind, 'unsupported');
+  });
+
   test('SuperRare artwork URL parses to token coords', () => {
     const result = parseFindInput(
-      'https://superrare.com/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/1'
+      'https://superrare.com/artwork/eth/0x3e930455dcbf4bc69de9926bdaf8ef782398786f/1'
     );
     assert.equal(result?.kind, 'token');
     if (result?.kind !== 'token') {
@@ -257,7 +368,7 @@ describe('parseFindInput', () => {
 
   test('SuperRare collection URL remains unsupported with specific message', () => {
     const result = parseFindInput(
-      'https://superrare.com/collection/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f'
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f'
     );
     assert.equal(result?.kind, 'unsupported');
     if (result?.kind !== 'unsupported') {

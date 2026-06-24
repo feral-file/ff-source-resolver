@@ -1,4 +1,5 @@
 import type { ParsedFindInput } from '../../../types';
+import { sourceTokenResult } from '../../../helpers';
 
 /**
  * parseOpenSeaItem parses OpenSea token routes. Non-Ethereum chains stay
@@ -20,9 +21,5 @@ export function parseOpenSeaItem(url: URL): ParsedFindInput | null {
         'Paste an Ethereum-chain OpenSea URL or a Tezos source (Objkt, fxhash).',
     };
   }
-  return {
-    kind: 'token',
-    source: 'opensea',
-    coords: { chain: 'ethereum', contract: tokenMatch[2].toLowerCase(), tokenId: tokenMatch[3] },
-  };
+  return sourceTokenResult('opensea', 'ethereum', tokenMatch[2], tokenMatch[3]);
 }

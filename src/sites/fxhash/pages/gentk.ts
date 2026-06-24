@@ -1,4 +1,5 @@
 import type { ParsedFindInput } from '../../../types';
+import { sourceTokenResult } from '../../../helpers';
 
 /**
  * parseFxhashGentk parses fxhash token URLs. Only FX1 Tezos gentks are
@@ -7,11 +8,7 @@ import type { ParsedFindInput } from '../../../types';
 export function parseFxhashGentk(url: URL): ParsedFindInput | null {
   const m = /^\/(?:gentk|iteration\/id)\/FX1-(KT[A-Za-z0-9]+)-(\d+)\/?$/.exec(url.pathname);
   if (m) {
-    return {
-      kind: 'token',
-      source: 'fxhash',
-      coords: { chain: 'tezos', contract: m[1], tokenId: m[2] },
-    };
+    return sourceTokenResult('fxhash', 'tezos', m[1], m[2]);
   }
   if (/^\/gentk\/FX2-/.test(url.pathname)) {
     return {
