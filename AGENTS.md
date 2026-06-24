@@ -66,7 +66,14 @@ Known real-world URL fixtures are checked by:
 npm run test:live
 ```
 
-Nightly GitHub Actions run both verification and live fixture checks.
+Headless-browser URL fixtures are checked by:
+
+```bash
+npm run test:headless
+```
+
+GitHub Actions run verification, live fixture checks, and Playwright headless
+fixture checks on pull requests, scheduled runs, and manual dispatch.
 
 ## Definition of done
 

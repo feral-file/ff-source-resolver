@@ -9,74 +9,163 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { parseFindInput, resolveTokenInfo } from '../src';
-import type { TokenCoords } from '../src';
+import type { ParsedFindInput, TokenCoords } from '../src';
 
 const RUN_LIVE = process.env.RUN_LIVE_RESOLVER_TESTS === '1';
 
-interface TokenUrlFixture {
+interface LiveSiteUrlFixture {
   source: string;
+  page: string;
   url: string;
   requestedUrl?: string;
   acceptedFinalUrls?: string[];
-  expected: TokenCoords;
+  expected: ExpectedParsedInput;
   browserNote: string;
 }
 
-const TOKEN_URL_FIXTURES: TokenUrlFixture[] = [
+type ExpectedParsedInput =
+  | { kind: 'token'; source: string; coords: TokenCoords }
+  | { kind: 'unsupported'; reasonIncludes?: string }
+  | { kind: 'objkt-alias'; alias: string; tokenId: string }
+  | { kind: 'ab-collection'; slug: string }
+  | { kind: 'os-collection'; slug: string }
+  | { kind: 'fxhash-iteration'; slug: string }
+  | { kind: 'fxhash-project'; slug: string }
+  | { kind: 'neort-art'; id: string }
+  | { kind: 'verse-series'; slug: string }
+  | { kind: 'raster-artwork'; slug: string }
+  | { kind: 'ff-url'; urlKind: string; identifier: string };
+
+const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
   {
     source: 'objkt',
+    page: 'token',
     url: 'https://objkt.com/tokens/KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton/9201',
+    acceptedFinalUrls: ['https://objkt.com/tokens/hicetnunc/9201'],
     expected: {
-      chain: 'tezos',
-      contract: 'KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton',
-      tokenId: '9201',
+      kind: 'token',
+      source: 'objkt',
+      coords: {
+        chain: 'tezos',
+        contract: 'KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton',
+        tokenId: '9201',
+      },
     },
-    browserNote: 'Browser title: objkt.com.',
+    browserNote: 'Browser title: Behind Asteroids.',
+  },
+  {
+    source: 'objkt',
+    page: 'alias-token',
+    url: 'https://objkt.com/tokens/hicetnunc/111068',
+    expected: { kind: 'objkt-alias', alias: 'hicetnunc', tokenId: '111068' },
+    browserNote: 'Browser title: CSRSNT-XAAI-15-of-32.png.',
+  },
+  {
+    source: 'objkt',
+    page: 'legacy-asset',
+    url: 'https://objkt.com/asset/KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton/9201',
+    acceptedFinalUrls: [
+      'https://objkt.com/tokens/KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton/9201',
+      'https://objkt.com/tokens/hicetnunc/9201',
+    ],
+    expected: {
+      kind: 'token',
+      source: 'objkt',
+      coords: {
+        chain: 'tezos',
+        contract: 'KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton',
+        tokenId: '9201',
+      },
+    },
+    browserNote: 'Browser title: Behind Asteroids.',
+  },
+  {
+    source: 'objkt',
+    page: 'collection',
+    url: 'https://objkt.com/collections/KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton',
+    acceptedFinalUrls: ['https://objkt.com/collections/hicetnunc'],
+    expected: { kind: 'unsupported', reasonIncludes: 'collection URLs' },
+    browserNote: 'Browser title: hic et nunc.',
   },
   {
     source: 'opensea',
+    page: 'item',
     url: 'https://opensea.io/item/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1',
-    requestedUrl: 'https://opensea.io/assets/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1',
     expected: {
-      chain: 'ethereum',
-      contract: '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d',
-      tokenId: '1',
+      kind: 'token',
+      source: 'opensea',
+      coords: {
+        chain: 'ethereum',
+        contract: '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d',
+        tokenId: '1',
+      },
     },
     browserNote: 'Browser title: #1 - Bored Ape Yacht Club | OpenSea.',
   },
   {
-    source: 'verse',
-    url: 'https://verse.works/items/ethereum/0x23b72f7458a204446983f544d655df10f70533e9/139',
+    source: 'opensea',
+    page: 'asset',
+    url: 'https://opensea.io/item/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1',
+    requestedUrl: 'https://opensea.io/assets/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1',
     expected: {
-      chain: 'ethereum',
-      contract: '0x23b72f7458a204446983f544d655df10f70533e9',
-      tokenId: '139',
+      kind: 'token',
+      source: 'opensea',
+      coords: {
+        chain: 'ethereum',
+        contract: '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d',
+        tokenId: '1',
+      },
     },
-    browserNote: 'Browser title: Quantizer 139 by Harm van den Dorpel | Verse.',
+    browserNote: 'Browser title: #1 - Bored Ape Yacht Club | OpenSea.',
   },
   {
-    source: 'superrare',
-    url: 'https://superrare.com/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/1',
-    expected: {
-      chain: 'ethereum',
-      contract: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
-      tokenId: '1',
-    },
-    browserNote: 'Browser title: Disassociative.',
+    source: 'opensea',
+    page: 'collection',
+    url: 'https://opensea.io/collection/azuki',
+    expected: { kind: 'os-collection', slug: 'azuki' },
+    browserNote: 'Browser title: Azuki collection.',
   },
   {
     source: 'artblocks',
+    page: 'current-token',
     url: 'https://www.artblocks.io/token/1/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/13000000',
-    requestedUrl: 'https://www.artblocks.io/token/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270-13000000',
     expected: {
-      chain: 'ethereum',
-      contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
-      tokenId: '13000000',
+      kind: 'token',
+      source: 'artblocks',
+      coords: {
+        chain: 'ethereum',
+        contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
+        tokenId: '13000000',
+      },
     },
     browserNote: 'Browser title: Ringers #0 by Dmitri Cherniak | Art Blocks.',
   },
   {
+    source: 'artblocks',
+    page: 'legacy-token',
+    url: 'https://www.artblocks.io/token/1/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/13000000',
+    requestedUrl: 'https://www.artblocks.io/token/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270-13000000',
+    expected: {
+      kind: 'token',
+      source: 'artblocks',
+      coords: {
+        chain: 'ethereum',
+        contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
+        tokenId: '13000000',
+      },
+    },
+    browserNote: 'Browser title: Ringers #0 by Dmitri Cherniak | Art Blocks.',
+  },
+  {
+    source: 'artblocks',
+    page: 'collection',
+    url: 'https://www.artblocks.io/collection/ringers-by-dmitri-cherniak',
+    expected: { kind: 'ab-collection', slug: 'ringers-by-dmitri-cherniak' },
+    browserNote: 'Browser title: Ringers by Dmitri Cherniak | Art Blocks.',
+  },
+  {
     source: 'fxhash',
+    page: 'gentk',
     url: 'https://www.fxhash.xyz/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
     requestedUrl: 'https://www.fxhash.xyz/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
     acceptedFinalUrls: [
@@ -84,17 +173,143 @@ const TOKEN_URL_FIXTURES: TokenUrlFixture[] = [
       'https://www.fxhash.xyz/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
     ],
     expected: {
-      chain: 'tezos',
-      contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
-      tokenId: '1234',
+      kind: 'token',
+      source: 'fxhash',
+      coords: {
+        chain: 'tezos',
+        contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+        tokenId: '1234',
+      },
     },
     browserNote: 'Browser title: The home of digital art | fxhash.',
+  },
+  {
+    source: 'fxhash',
+    page: 'iteration-slug',
+    url: 'https://www.fxhash.xyz/iteration/garden-monoliths-215',
+    expected: { kind: 'fxhash-iteration', slug: 'garden-monoliths-215' },
+    browserNote: 'Browser title: Garden, Monoliths #215 by zancan | fxhash.',
+  },
+  {
+    source: 'fxhash',
+    page: 'generative',
+    url: 'https://www.fxhash.xyz/project/id/garden-monoliths',
+    requestedUrl: 'https://www.fxhash.xyz/generative/garden-monoliths',
+    expected: { kind: 'fxhash-project', slug: 'garden-monoliths' },
+    browserNote: 'Browser title: The home of digital art | fxhash.',
+  },
+  {
+    source: 'fxhash',
+    page: 'project',
+    url: 'https://www.fxhash.xyz/project/garden-monoliths',
+    expected: { kind: 'fxhash-project', slug: 'garden-monoliths' },
+    browserNote: 'Browser title: Garden, Monoliths by zancan | fxhash.',
+  },
+  {
+    source: 'superrare',
+    page: 'artwork',
+    url: 'https://superrare.com/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/1',
+    expected: {
+      kind: 'token',
+      source: 'superrare',
+      coords: {
+        chain: 'ethereum',
+        contract: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+        tokenId: '1',
+      },
+    },
+    browserNote: 'Browser title: Disassociative.',
+  },
+  {
+    source: 'superrare',
+    page: 'collection',
+    url: 'https://superrare.com/collection/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f',
+    expected: { kind: 'unsupported', reasonIncludes: '/collection/' },
+    browserNote: 'Browser title: SuperRare.',
+  },
+  {
+    source: 'neort',
+    page: 'art',
+    url: 'https://neort.io/art/ce3lvgkn70rlpj69ccc0',
+    acceptedFinalUrls: ['https://neort.io/en/art/ce3lvgkn70rlpj69ccc0'],
+    expected: { kind: 'neort-art', id: 'ce3lvgkn70rlpj69ccc0' },
+    browserNote: 'Browser title: Multiple Dimension.',
+  },
+  {
+    source: 'neort',
+    page: 'localized-art',
+    url: 'https://neort.io/en/art/ce3lvgkn70rlpj69ccc0',
+    expected: { kind: 'neort-art', id: 'ce3lvgkn70rlpj69ccc0' },
+    browserNote: 'Browser title: Multiple Dimension.',
+  },
+  {
+    source: 'verse',
+    page: 'item',
+    url: 'https://verse.works/items/ethereum/0x23b72f7458a204446983f544d655df10f70533e9/139',
+    expected: {
+      kind: 'token',
+      source: 'verse',
+      coords: {
+        chain: 'ethereum',
+        contract: '0x23b72f7458a204446983f544d655df10f70533e9',
+        tokenId: '139',
+      },
+    },
+    browserNote: 'Browser title: Quantizer 139 by Harm van den Dorpel | Verse.',
+  },
+  {
+    source: 'verse',
+    page: 'series',
+    url: 'https://verse.works/series/quantizer-by-harm-van-den-dorpel',
+    expected: { kind: 'verse-series', slug: 'quantizer-by-harm-van-den-dorpel' },
+    browserNote: 'Browser title: Quantizer by Harm van den Dorpel | Verse.',
+  },
+  {
+    source: 'raster',
+    page: 'artwork',
+    url: 'https://raster.art/artwork/split-logic-by-ricky-retouch',
+    acceptedFinalUrls: ['https://www.raster.art/artwork/split-logic-by-ricky-retouch'],
+    expected: { kind: 'raster-artwork', slug: 'split-logic-by-ricky-retouch' },
+    browserNote: 'Browser title: Split Logic by Ricky Retouch | Raster.',
+  },
+  {
+    source: 'raster',
+    page: 'token',
+    url: 'https://www.raster.art/token/ethereum/0xf5705202462f066ac55c293f5798ae027b2f27b5/95',
+    expected: {
+      kind: 'token',
+      source: 'raster',
+      coords: {
+        chain: 'ethereum',
+        contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+        tokenId: '95',
+      },
+    },
+    browserNote: 'Browser title: Raster token page.',
+  },
+  {
+    source: 'feralfile',
+    page: 'artwork',
+    url: 'https://feralfile.com/exhibitions/artwork/f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
+    expected: {
+      kind: 'ff-url',
+      urlKind: 'artwork',
+      identifier: 'f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
+    },
+    browserNote: 'Browser title: Feral File | Exhibitions.',
+  },
+  {
+    source: 'feralfile',
+    page: 'show',
+    url: 'https://feralfile.com/exhibitions/shows/ex-nihilo-a3c',
+    expected: { kind: 'ff-url', urlKind: 'show', identifier: 'ex-nihilo-a3c' },
+    browserNote: 'Browser title: Experience the Ex Nihilo art exhibition on Feral File.',
   },
 ];
 
 describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
-  for (const fixture of TOKEN_URL_FIXTURES) {
-    test(`${fixture.source}: browsed URL remains reachable`, async () => {
+  for (const fixture of LIVE_SITE_URL_FIXTURES) {
+    test(`${fixture.source} ${fixture.page}: browsed URL remains reachable`, async () => {
       const response = await fetchTokenPage(fixture.requestedUrl ?? fixture.url);
       assert.notEqual(response.status, 404, fixture.browserNote);
       assert.ok(response.status < 500, `${fixture.source} returned ${response.status}`);
@@ -104,17 +319,15 @@ describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
       );
     });
 
-    test(`${fixture.source}: parseFindInput extracts token coordinates`, () => {
+    test(`${fixture.source} ${fixture.page}: parseFindInput matches browsed URL shape`, () => {
       const result = parseFindInput(fixture.url);
-      assert.equal(result?.kind, 'token', fixture.browserNote);
-      if (result?.kind !== 'token') {
-        throw new Error('narrowing');
-      }
-      assert.equal(result.source, fixture.source);
-      assert.deepEqual(result.coords, fixture.expected);
+      assertParsedInput(result, fixture.expected, fixture.browserNote);
     });
 
-    test(`${fixture.source}: resolveTokenInfo resolves via URL parser`, async () => {
+    test(`${fixture.source} ${fixture.page}: resolveTokenInfo preserves URL parser precedence`, async () => {
+      if (fixture.expected.kind !== 'token') {
+        return;
+      }
       const result = await resolveTokenInfo(fixture.url, {
         fetch: async () => {
           throw new Error('URL parser should resolve before fetch runs.');
@@ -125,7 +338,7 @@ describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
         throw new Error('narrowing');
       }
       assert.equal(result.method, 'url');
-      assert.deepEqual(result.coords, fixture.expected);
+      assert.deepEqual(result.coords, fixture.expected.coords);
     });
   }
 });
@@ -163,6 +376,45 @@ function normalizeUrl(value: string): string {
  * Some marketplaces use client-side routing to move legacy URLs, so HTTP fetch
  * can stop at a still-valid legacy route while the browser shows a new route.
  */
-function acceptedFinalUrls(fixture: TokenUrlFixture): string[] {
-  return (fixture.acceptedFinalUrls ?? [fixture.url]).map(normalizeUrl);
+function acceptedFinalUrls(fixture: LiveSiteUrlFixture): string[] {
+  const urls = new Set([fixture.url, fixture.requestedUrl ?? fixture.url, ...(fixture.acceptedFinalUrls ?? [])]);
+  return [...urls].map(normalizeUrl);
+}
+
+/**
+ * assertParsedInput compares only the stable parser contract for live fixtures.
+ */
+function assertParsedInput(
+  actual: ParsedFindInput | null,
+  expected: ExpectedParsedInput,
+  message: string
+): void {
+  assert.equal(actual?.kind, expected.kind, message);
+  if (!actual) {
+    throw new Error('narrowing');
+  }
+  switch (expected.kind) {
+    case 'token':
+      assert.equal(actual.kind, 'token');
+      if (actual.kind === 'token') {
+        assert.equal(actual.source, expected.source);
+        assert.deepEqual(actual.coords, expected.coords);
+      }
+      return;
+    case 'unsupported':
+      assert.equal(actual.kind, 'unsupported');
+      if (actual.kind === 'unsupported' && expected.reasonIncludes) {
+        assert.ok(actual.reason.includes(expected.reasonIncludes));
+      }
+      return;
+    case 'ff-url':
+      assert.equal(actual.kind, 'ff-url');
+      if (actual.kind === 'ff-url') {
+        assert.equal(actual.urlKind, expected.urlKind);
+        assert.equal(actual.identifier, expected.identifier);
+      }
+      return;
+    default:
+      assert.deepEqual(actual, expected);
+  }
 }

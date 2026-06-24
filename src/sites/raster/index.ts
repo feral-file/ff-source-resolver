@@ -1,6 +1,7 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
 import { htmlTokenResult } from '../../site-utils';
 import { parseRasterArtwork } from './pages/artwork';
+import { parseRasterToken } from './pages/token';
 
 /**
  * rasterAdapter owns Raster URL and page extraction rules.
@@ -10,6 +11,7 @@ export const rasterAdapter: SourceSiteAdapter = {
   hosts: ['raster.art'],
   parseUrl(url: URL): ParsedFindInput {
     return (
+      parseRasterToken(url) ??
       parseRasterArtwork(url) ?? {
         kind: 'unsupported',
         reason: `Raster URL not recognized: ${url.pathname}. Expected /artwork/{slug}.`,

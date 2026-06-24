@@ -43,8 +43,8 @@ The parser currently recognizes:
 2. Static DOM lookup using `fetch`.
 3. Optional caller-provided headless browser rendering.
 
-The browser path is an interface only. This package does not bundle Playwright,
-Cloudflare Browser Rendering, credentials, or any hosted infrastructure.
+The browser path is an interface only. This package has no runtime browser
+dependency and does not own credentials or hosted infrastructure.
 
 ## Development
 
@@ -62,3 +62,15 @@ npm run test:live
 The live fixture suite uses URLs confirmed in the in-app browser, follows
 redirects where marketplaces expose them over HTTP, checks for disappearing
 pages, and verifies resolver behavior. It does not require marketplace API keys.
+
+Run the headless-browser resolver fixtures:
+
+```bash
+npx playwright install chromium
+npm run test:headless
+```
+
+The headless suite hooks Playwright into the `HeadlessPageRenderer` interface
+and verifies pages whose token links appear only after client-side rendering.
+CI runs both live suites on pull requests, scheduled runs, and manual dispatch
+so supported-site URL changes are caught early.

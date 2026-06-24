@@ -63,7 +63,19 @@ export function extractTokenFromText(text: string): TokenCoords | null {
   if (m) {
     return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
   }
+  m = /\/token\/\d+\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
+  if (m) {
+    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+  }
   m = /\/(?:tokens|asset)\/(KT[A-Za-z0-9]+)\/(\d+)/.exec(text);
+  if (m) {
+    return { chain: 'tezos', contract: m[1], tokenId: m[2] };
+  }
+  m = /\/token\/ethereum\/(0x[a-fA-F0-9]{40})\/(\d+)/i.exec(text);
+  if (m) {
+    return { chain: 'ethereum', contract: m[1].toLowerCase(), tokenId: m[2] };
+  }
+  m = /\/token\/tezos\/(KT[A-Za-z0-9]+)\/(\d+)/.exec(text);
   if (m) {
     return { chain: 'tezos', contract: m[1], tokenId: m[2] };
   }

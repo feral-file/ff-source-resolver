@@ -201,6 +201,15 @@ describe('parseFindInput', () => {
     assert.equal(result.slug, 'garden-monoliths');
   });
 
+  test('fxhash browser-final project id URL parses to fxhash-project marker', () => {
+    const result = parseFindInput('https://www.fxhash.xyz/project/id/garden-monoliths');
+    assert.equal(result?.kind, 'fxhash-project');
+    if (result?.kind !== 'fxhash-project') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.slug, 'garden-monoliths');
+  });
+
   test('OpenSea Ethereum token URL parses to token coords', () => {
     const result = parseFindInput(
       'https://opensea.io/assets/ethereum/0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d/1'
@@ -276,6 +285,15 @@ describe('parseFindInput', () => {
     assert.equal(result.id, 'ce3lvgkn70rlpj69ccc0');
   });
 
+  test('Neort browser-final localized art URL parses to neort-art marker', () => {
+    const result = parseFindInput('https://neort.io/en/art/ce3lvgkn70rlpj69ccc0');
+    assert.equal(result?.kind, 'neort-art');
+    if (result?.kind !== 'neort-art') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.id, 'ce3lvgkn70rlpj69ccc0');
+  });
+
   test('Neort root URL remains unsupported with art hint', () => {
     const result = parseFindInput('https://neort.io/');
     assert.equal(result?.kind, 'unsupported');
@@ -333,6 +351,30 @@ describe('parseFindInput', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.slug, 'split-logic-by-ricky-retouch');
+  });
+
+  test('Raster token URL parses to token coords', () => {
+    const result = parseFindInput(
+      'https://www.raster.art/token/ethereum/0xf5705202462f066ac55c293f5798ae027b2f27b5/95'
+    );
+    assert.equal(result?.kind, 'token');
+    if (result?.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.source, 'raster');
+    assert.equal(result.coords.chain, 'ethereum');
+    assert.equal(result.coords.contract, '0xf5705202462f066ac55c293f5798ae027b2f27b5');
+    assert.equal(result.coords.tokenId, '95');
+  });
+
+  test('Raster token URL with malformed Ethereum contract remains unsupported', () => {
+    const result = parseFindInput('https://raster.art/token/ethereum/not-a-contract/95');
+    assert.equal(result?.kind, 'unsupported');
+  });
+
+  test('Raster token URL with malformed Tezos contract remains unsupported', () => {
+    const result = parseFindInput('https://raster.art/token/tezos/not-a-contract/95');
+    assert.equal(result?.kind, 'unsupported');
   });
 
   test('Raster non-artwork URL remains unsupported with artwork hint', () => {
