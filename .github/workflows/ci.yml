@@ -32,7 +32,7 @@ jobs:
   live-resolver:
     name: Live Resolver Fixtures
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,3 +48,9 @@ jobs:
 
       - name: Run live resolver fixtures
         run: npm run test:live
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright headless resolver fixtures
+        run: npm run test:headless

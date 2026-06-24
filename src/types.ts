@@ -40,6 +40,11 @@ export interface SourceSiteAdapter {
   extractFromHtml?(url: URL, html: string): ParsedFindInput | null;
 }
 
+/**
+ * HeadlessPageRenderer is the vendor-neutral browser hook used after URL
+ * parsing and static DOM lookup miss. Implementations return rendered HTML;
+ * callers choose and operate the browser infrastructure outside this package.
+ */
 export interface HeadlessPageRenderer {
   render(url: string): Promise<string | null>;
 }

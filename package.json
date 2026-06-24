@@ -22,6 +22,7 @@
     "test": "npm run test:unit",
     "test:unit": "npm run build && node --test dist/tests/source-resolver.test.js",
     "test:live": "npm run build && RUN_LIVE_RESOLVER_TESTS=1 node --test dist/tests/live-token-urls.test.js",
+    "test:headless": "npm run build && RUN_HEADLESS_RESOLVER_TESTS=1 node --test dist/tests/playwright-headless.test.js",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
     "verify": "npm run typecheck && npm run test:unit"
@@ -35,6 +36,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^24.7.1",
+    "playwright": "^1.61.1",
     "typescript": "^5.9.3"
   }
 }
