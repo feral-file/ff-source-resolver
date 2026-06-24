@@ -578,7 +578,7 @@ describe('resolveTokenInfo fallback order', () => {
 
   test('static DOM lookup runs after URL parsing when a page marker is not a token', async () => {
     const fetchImpl = async (): Promise<Response> =>
-      new Response(`<a href="/items/ethereum/${ETH_CONTRACT}/139">Edition</a>`, {
+      new Response(verseItemCard(ETH_CONTRACT, '139'), {
         status: 200,
         headers: { 'Content-Type': 'text/html' },
       });
@@ -603,10 +603,10 @@ describe('resolveTokenInfo fallback order', () => {
       new Response('<html>client shell only</html>', {
         status: 200,
         headers: { 'Content-Type': 'text/html' },
-      });
+    });
     const renderer: HeadlessPageRenderer = {
       async render(): Promise<string> {
-        return `<a href="/token/${ETH_CONTRACT}-5001410">Token</a>`;
+        return artBlocksCard(`/token/${ETH_CONTRACT}-5001410`);
       },
     };
 
@@ -624,7 +624,7 @@ describe('resolveTokenInfo fallback order', () => {
 
   test('resolveFindInput returns page-inspected token before the original series marker', async () => {
     const fetchImpl = async (): Promise<Response> =>
-      new Response(`<a href="/items/ethereum/${ETH_CONTRACT}/42">Edition</a>`, {
+      new Response(verseItemCard(ETH_CONTRACT, '42'), {
         status: 200,
         headers: { 'Content-Type': 'text/html' },
       });
@@ -639,14 +639,426 @@ describe('resolveTokenInfo fallback order', () => {
   });
 });
 
+describe('fxhash DOM and headless extraction', () => {
+  test('ignores FX1 token paths embedded in broad static HTML', async () => {
+    const html =
+      '<html><head>' +
+      '<script>window.__noise="/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234";</script>' +
+      '</head><body>' +
+      '<main><a href="/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-5678">Cached token</a></main>' +
+      '</body></html>';
+
+    const result = await resolveTokenInfo('https://www.fxhash.xyz/project/garden-monoliths', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores FX1 token paths embedded in broad rendered HTML', async () => {
+    let rendered = false;
+    const fetchImpl = async (): Promise<Response> =>
+      new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        rendered = true;
+        return (
+          '<html><body>' +
+          '<section class="min-h-[60vh]">' +
+          '<a href="/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234">Cached token</a>' +
+          '</section>' +
+          '</body></html>'
+        );
+      },
+    };
+
+    const result = await resolveTokenInfo('https://www.fxhash.xyz/iteration/garden-monoliths-215', {
+      fetch: fetchImpl as typeof fetch,
+      renderer,
+    });
+
+    assert.equal(rendered, true);
+    assert.equal(result.kind, 'not-found');
+  });
+});
+
+describe('Objkt DOM and headless extraction', () => {
+  test('extracts alias token coordinates from Objkt social-image metadata', async () => {
+    const html = [
+      `<script>window.__noise = "/tokens/${INVALID_TEZOS_CONTRACT}/111068";</script>`,
+      objktSocialImageMeta(TEZOS_CONTRACT, '111068'),
+    ].join('');
+
+    const result = await resolveTokenInfo('https://objkt.com/tokens/hicetnunc/111068', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, {
+      chain: 'tezos',
+      contract: TEZOS_CONTRACT,
+      tokenId: '111068',
+    });
+  });
+
+  test('ignores unrelated Objkt token paths outside social-image metadata', async () => {
+    const html = [
+      `<script>window.__noise = "/tokens/${TEZOS_CONTRACT}/111068";</script>`,
+      `<a href="/tokens/${TEZOS_CONTRACT}/111068">Cached unrelated token</a>`,
+      '<meta property="og:url" content="https://objkt.com/tokens/hicetnunc/111068">',
+    ].join('');
+
+    const result = await resolveTokenInfo('https://objkt.com/tokens/hicetnunc/111068', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores scoped-looking Objkt social metadata inside scripts and comments', async () => {
+    const meta = objktSocialImageMeta(TEZOS_CONTRACT, '111068');
+    const html = `<script>window.__meta = ${JSON.stringify(meta)};</script><!-- ${meta} -->`;
+
+    const result = await resolveTokenInfo('https://objkt.com/tokens/hicetnunc/111068', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores Objkt social-image metadata for a different token id', async () => {
+    const result = await resolveTokenInfo('https://objkt.com/tokens/hicetnunc/111068', {
+      fetch: htmlFetch(objktSocialImageMeta(TEZOS_CONTRACT, '111069')) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('does not extract Objkt metadata from invalid direct KT1 token URLs', async () => {
+    const result = await resolveTokenInfo(
+      `https://objkt.com/tokens/${INVALID_TEZOS_CONTRACT}/111068`,
+      { fetch: htmlFetch(objktSocialImageMeta(TEZOS_CONTRACT, '111068')) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('extracts Objkt rendered social metadata through the headless fallback', async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        return objktSocialImageMeta(TEZOS_CONTRACT, '111068');
+      },
+    };
+
+    const result = await resolveTokenInfo('https://objkt.com/tokens/hicetnunc/111068', {
+      fetch: fetchImpl as typeof fetch,
+      renderer,
+    });
+
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.deepEqual(result.coords, {
+      chain: 'tezos',
+      contract: TEZOS_CONTRACT,
+      tokenId: '111068',
+    });
+  });
+});
+
+describe('Art Blocks DOM extraction', () => {
+  test('extracts token links from scoped collection cards', async () => {
+    const html =
+      `<script>window.__noise = "/token/${ETH_CONTRACT}-999";</script>` +
+      artBlocksCard(`/token/${ETH_CONTRACT}-5001410`);
+    const result = await resolveTokenInfo('https://artblocks.io/collection/example', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: ETH_CONTRACT,
+      tokenId: '5001410',
+    });
+  });
+
+  test('ignores unrelated Art Blocks token paths outside scoped cards', async () => {
+    const html =
+      `<script>window.__noise = "/token/${ETH_CONTRACT}-999";</script>` +
+      `<a href="/token/${ETH_CONTRACT}-888">Out of scope</a>`;
+    const result = await resolveTokenInfo('https://artblocks.io/collection/example', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores scoped-looking Art Blocks card markup inside scripts and comments', async () => {
+    const html =
+      `<script>${JSON.stringify(artBlocksCard(`/token/${ETH_CONTRACT}-777`))}</script>` +
+      `<!-- ${artBlocksCard(`/token/${ETH_CONTRACT}-888`)} -->`;
+
+    const result = await resolveTokenInfo('https://artblocks.io/collection/example', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores Art Blocks token hrefs nested in comments inside a valid card', async () => {
+    const html =
+      '<div class="relative self-start h-fit flex w-full flex-col">' +
+      `<!-- <a class="relative isolate z-10 block flex-1" href="/token/${ETH_CONTRACT}-777">Cached</a> -->` +
+      '</div>';
+
+    const result = await resolveTokenInfo('https://artblocks.io/collection/example', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('does not extract Art Blocks collection cards from legacy project URLs', async () => {
+    const result = await resolveTokenInfo('https://artblocks.io/projects/123', {
+      fetch: htmlFetch(artBlocksCard(`/token/${ETH_CONTRACT}-5001410`)) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+});
+
+describe('Verse DOM and headless extraction', () => {
+  test('extracts Verse item URLs from rendered item-card scope only', async () => {
+    const outsideContract = '0x1111111111111111111111111111111111111111';
+    const html = [
+      `<nav><a href="/items/ethereum/${outsideContract}/999">Cached unrelated item</a></nav>`,
+      verseItemCard(ETH_CONTRACT, '139'),
+    ].join('');
+
+    const result = await resolveTokenInfo('https://verse.works/series/example-series', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: ETH_CONTRACT,
+      tokenId: '139',
+    });
+  });
+
+  test('ignores unrelated Verse item paths outside item-card scope', async () => {
+    const html =
+      `<script>const marker = "virtuoso-grid-item"; const path = "/items/ethereum/${ETH_CONTRACT}/888";</script>` +
+      `<main><a href="/items/ethereum/${ETH_CONTRACT}/999">Cached unrelated item</a></main>`;
+
+    const result = await resolveTokenInfo('https://verse.works/series/example-series', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores scoped-looking Verse card markup inside scripts and comments', async () => {
+    const html =
+      `<script>${JSON.stringify(verseItemCard(ETH_CONTRACT, '888'))}</script>` +
+      `<!-- ${verseItemCard(ETH_CONTRACT, '999')} -->`;
+
+    const result = await resolveTokenInfo('https://verse.works/series/example-series', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores Verse item paths nested in comments inside a valid item card', async () => {
+    const html =
+      '<div class="virtuoso-grid-item">' +
+      '<figure class="TabArtworkThumbnail_root__qKVCx">' +
+      `<!-- <a class="TabArtworkThumbnail_link__nHCZf" href="/items/ethereum/${ETH_CONTRACT}/888">Cached</a> -->` +
+      '</figure></div>';
+
+    const result = await resolveTokenInfo('https://verse.works/series/example-series', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('does not extract Verse series cards from unsupported item URLs', async () => {
+    const result = await resolveTokenInfo('https://verse.works/items/tezos/KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton/1', {
+      fetch: htmlFetch(verseItemCard(ETH_CONTRACT, '139')) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('extracts Verse rendered item cards through the headless fallback', async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        return verseItemCard(ETH_CONTRACT, '216');
+      },
+    };
+
+    const result = await resolveTokenInfo('https://verse.works/series/example-series', {
+      fetch: fetchImpl as typeof fetch,
+      renderer,
+    });
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: ETH_CONTRACT,
+      tokenId: '216',
+    });
+  });
+});
+
+describe('Raster DOM and headless extraction', () => {
+  test('extracts Raster token paths from rendered artwork-card scopes', async () => {
+    const outsideContract = '0x1111111111111111111111111111111111111111';
+    const html = [
+      `<script>window.__noise = "/token/ethereum/${outsideContract}/999";</script>`,
+      rasterArtworkCard(ETH_CONTRACT, '95'),
+    ].join('');
+
+    const result = await resolveTokenInfo(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: ETH_CONTRACT,
+      tokenId: '95',
+    });
+  });
+
+  test('ignores unrelated Raster token paths outside artwork-card scopes', async () => {
+    const html = [
+      `<script>const cached = "/token/ethereum/${ETH_CONTRACT}/888";</script>`,
+      `<main><a href="/token/ethereum/${ETH_CONTRACT}/999">Cached token</a></main>`,
+      '<div class="ArtItem_artworkCard__LYD5v MediaGrid_gridItem__IQWJ_">',
+      '<span>Rendered card shell without token link</span>',
+      '</div>',
+    ].join('');
+
+    const result = await resolveTokenInfo(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores stringified Raster artwork scopes in scripts and comments', async () => {
+    const html = [
+      '<script>',
+      `const cached = '<a class="ArtItem_artworkLink__MdzKE" href="/token/ethereum/${ETH_CONTRACT}/888">Cached</a>';`,
+      '</script>',
+      `<!-- <a class="ArtItem_buyNow__dO2rg" href="/token/ethereum/${ETH_CONTRACT}/999">Cached</a> -->`,
+      '<div class="ArtItem_artworkCard__LYD5v MediaGrid_gridItem__IQWJ_">',
+      '<span>Rendered card shell without token link</span>',
+      '</div>',
+    ].join('');
+
+    const result = await resolveTokenInfo(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores Raster token paths nested in comments inside a valid artwork card', async () => {
+    const html = [
+      '<div class="ArtItem_artworkCard__LYD5v MediaGrid_gridItem__IQWJ_">',
+      `<!-- <a class="ArtItem_artworkLink__MdzKE" href="/token/ethereum/${ETH_CONTRACT}/888">Cached</a> -->`,
+      '</div>',
+    ].join('');
+
+    const result = await resolveTokenInfo(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('extracts Raster rendered artwork cards through the headless fallback', async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        return rasterArtworkCard(ETH_CONTRACT, '100');
+      },
+    };
+
+    const result = await resolveTokenInfo(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: fetchImpl as typeof fetch, renderer }
+    );
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: ETH_CONTRACT,
+      tokenId: '100',
+    });
+  });
+});
+
 describe('OpenSea DOM extraction', () => {
   test('selects dominant contract and lowest tokenId, ignoring unrelated payment-token JSON', async () => {
     const html =
       '<html><script>' +
       '{"symbol":"WETH","contractAddress":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}' +
-      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97') +
-      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '15') +
-      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '40') +
+      openSeaItem('ethereum', OPENSEA_STRAY_CONTRACT, '1') +
+      openSeaCollectionItems(
+        openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97'),
+        openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '15'),
+        openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '40')
+      ) +
       openSeaItem('ethereum', OPENSEA_STRAY_CONTRACT, '7') +
       '</script></html>';
     const result = await resolveTokenInfo('https://opensea.io/collection/a-eye-after-johannes-itten', {
@@ -666,9 +1078,10 @@ describe('OpenSea DOM extraction', () => {
 
   test('compares embedded OpenSea tokenIds as BigInt', async () => {
     const big = '106531167402379141148776360336529888293057364703212462867524098456103606550529';
-    const html =
-      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, big) +
-      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '9');
+    const html = openSeaCollectionItems(
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, big),
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '9')
+    );
     const result = await resolveTokenInfo('https://opensea.io/collection/big-ids', {
       fetch: htmlFetch(html) as typeof fetch,
     });
@@ -680,12 +1093,203 @@ describe('OpenSea DOM extraction', () => {
   });
 
   test('does not return non-Ethereum OpenSea collection candidates', async () => {
-    const html =
-      openSeaItem('matic', OPENSEA_STRAY_CONTRACT, '1') +
-      openSeaItem('matic', OPENSEA_STRAY_CONTRACT, '2');
+    const html = openSeaCollectionItems(
+      openSeaItem('matic', OPENSEA_STRAY_CONTRACT, '1'),
+      openSeaItem('matic', OPENSEA_STRAY_CONTRACT, '2')
+    );
     const result = await resolveTokenInfo('https://opensea.io/collection/polygon-collection', {
       fetch: htmlFetch(html) as typeof fetch,
     });
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('extracts rendered OpenSea item cards through the headless fallback', async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        return [
+          openSeaCardAnchor(OPENSEA_COLLECTION_CONTRACT, '22'),
+          openSeaCardAnchor(OPENSEA_COLLECTION_CONTRACT, '9'),
+        ].join('');
+      },
+    };
+
+    const result = await resolveTokenInfo('https://opensea.io/collection/rendered-items', {
+      fetch: fetchImpl as typeof fetch,
+      renderer,
+    });
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: OPENSEA_COLLECTION_CONTRACT,
+      tokenId: '9',
+    });
+  });
+
+  test('ignores unscoped OpenSea token paths and anchors outside item scopes', async () => {
+    const html =
+      '<html><body>' +
+      `<p>/item/ethereum/${OPENSEA_STRAY_CONTRACT}/1</p>` +
+      `<a href="/item/ethereum/${OPENSEA_STRAY_CONTRACT}/3">Cached unrelated item</a>` +
+      '<script>' +
+      openSeaItem('ethereum', OPENSEA_STRAY_CONTRACT, '2') +
+      '</script>' +
+      '</body></html>';
+    const result = await resolveTokenInfo('https://opensea.io/collection/no-scoped-items', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores scoped-looking rendered OpenSea item cards inside scripts and comments', async () => {
+    const card = openSeaCardAnchor(OPENSEA_COLLECTION_CONTRACT, '22');
+    const html = `<script>window.__card = ${JSON.stringify(card)};</script><!-- ${card} -->`;
+
+    const result = await resolveTokenInfo('https://opensea.io/collection/no-rendered-items', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores OpenSea card markers nested in comments inside a token anchor', async () => {
+    const html =
+      `<a href="/item/ethereum/${OPENSEA_COLLECTION_CONTRACT}/22">` +
+      '<!-- <article data-testid="ItemName">Cached card marker</article> -->' +
+      '</a>';
+
+    const result = await resolveTokenInfo('https://opensea.io/collection/no-rendered-items', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('does not extract OpenSea collection cards from unsupported item URLs', async () => {
+    const result = await resolveTokenInfo(
+      `https://opensea.io/assets/matic/${OPENSEA_STRAY_CONTRACT}/1`,
+      { fetch: htmlFetch(openSeaCardAnchor(OPENSEA_COLLECTION_CONTRACT, '22')) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+});
+
+describe('SuperRare DOM extraction', () => {
+  test('extracts first scoped collection card and normalizes mixed-case artwork paths', async () => {
+    const html = superRareCollectionHtml(`
+      <article class="group flex flex-col">
+        <a data-reference-id="artwork-thumbnail" href="/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/7"></a>
+        <a href="/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/7">Dissonance</a>
+      </article>
+      <article class="group flex flex-col">
+        <a href="/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/1">Disassociative</a>
+      </article>
+    `);
+
+    const result = await resolveTokenInfo(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, {
+      chain: 'ethereum',
+      contract: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      tokenId: '7',
+    });
+  });
+
+  test('extracts SuperRare collection cards from headless-rendered HTML', async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        return superRareCollectionHtml(`
+          <article class="group flex flex-col">
+            <a href="/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/7">Dissonance</a>
+          </article>
+        `);
+      },
+    };
+
+    const result = await resolveTokenInfo(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: fetchImpl as typeof fetch, renderer }
+    );
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.equal(result.coords.tokenId, '7');
+  });
+
+  test('ignores unrelated SuperRare artwork paths outside the collection card scope', async () => {
+    const html =
+      '<html><script>"/artwork/eth/0x1111111111111111111111111111111111111111/999"</script>' +
+      superRareCollectionHtml('<article class="group flex flex-col">No artwork link</article>') +
+      '</html>';
+
+    const result = await resolveTokenInfo(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores scoped-looking SuperRare collection markup inside scripts and comments', async () => {
+    const scopedMarkup = superRareCollectionHtml(`
+      <article class="group flex flex-col">
+        <a href="/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/7">Dissonance</a>
+      </article>
+    `);
+    const html = `<script>${JSON.stringify(scopedMarkup)}</script><!-- ${scopedMarkup} -->`;
+
+    const result = await resolveTokenInfo(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+
+  test('ignores SuperRare artwork paths nested in comments inside a valid collection card', async () => {
+    const html = superRareCollectionHtml(`
+      <article class="group flex flex-col">
+        <!-- <a href="/artwork/eth/0x3e930455dcBf4bC69DE9926bDAF8ef782398786f/7">Cached</a> -->
+      </article>
+    `);
+
+    const result = await resolveTokenInfo(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+});
+
+describe('Feral File DOM extraction', () => {
+  test('ignores unrelated token paths because Feral File IDs need caller-owned API resolution', async () => {
+    const result = await resolveTokenInfo('https://feralfile.com/exhibitions/artwork/12345', {
+      fetch: htmlFetch(`<a href="/items/ethereum/${ETH_CONTRACT}/1">Unrelated token</a>`) as typeof fetch,
+    });
+
     assert.equal(result.kind, 'not-found');
   });
 });
@@ -702,6 +1306,66 @@ function htmlFetch(html: string): () => Promise<Response> {
 }
 
 /**
+ * objktSocialImageMeta returns the rendered token-detail meta scope Objkt uses
+ * for social previews of alias-backed token pages.
+ */
+function objktSocialImageMeta(contract: string, tokenId: string): string {
+  return (
+    '<meta property="og:image" ' +
+    `content="https://assets.objkt.media/file/assets-003/${contract}/${tokenId}/social">`
+  );
+}
+
+/**
+ * artBlocksCard returns the repeated rendered card/link shape used by Art
+ * Blocks collection pages for token thumbnails.
+ */
+function artBlocksCard(href: string): string {
+  return (
+    '<div class="relative self-start h-fit flex w-full flex-col">' +
+    `<a class="relative isolate z-10 block flex-1" href="${href}">Token</a>` +
+    '</div>'
+  );
+}
+
+/**
+ * verseItemCard returns one rendered Verse series card fixture.
+ */
+function verseItemCard(contract: string, tokenId: string): string {
+  return (
+    '<div class="virtuoso-grid-item">' +
+    '<figure class="TabArtworkThumbnail_root__qKVCx">' +
+    `<a class="TabArtworkThumbnail_link__nHCZf" href="/items/ethereum/${contract}/${tokenId}">` +
+    'Go to edition page</a>' +
+    '<figcaption class="TabArtworkThumbnail_info__9ZISq">' +
+    `<a class="TabArtworkThumbnail_title__95Dye" href="/items/ethereum/${contract}/${tokenId}">` +
+    `Quantizer ${tokenId}</a>` +
+    '</figcaption></figure></div>'
+  );
+}
+
+/**
+ * rasterArtworkCard returns one rendered Raster artwork card fixture.
+ */
+function rasterArtworkCard(contract: string, tokenId: string): string {
+  return (
+    '<div class="ArtItem_artworkCard__LYD5v MediaGrid_gridItem__IQWJ_">' +
+    '<div class="ArtItem_artworkCardContent__LCNlL">' +
+    `<a class="ArtItem_artworkLink__MdzKE" href="/token/ethereum/${contract}/${tokenId}">` +
+    '<div class="ArtItem_imageContainer__NNJDo">' +
+    `<img alt="Split Logic #${tokenId}" class="ArtItem_artworkImage__8UfeW">` +
+    '</div></a>' +
+    '<div class="ArtItem_label__ReczX">' +
+    '<div class="ArtItem_titleRow__A2Gom">' +
+    `<a class="ArtItem_artworkLink__MdzKE" href="/token/ethereum/${contract}/${tokenId}">` +
+    `<div class="ArtItem_artworkTitle__bNifT">Split Logic #${tokenId}</div></a>` +
+    `<a class="ArtItem_buyNow__dO2rg" href="/token/ethereum/${contract}/${tokenId}?action=buy">` +
+    'BUY 0.13 ETH</a>' +
+    '</div></div></div></div>'
+  );
+}
+
+/**
  * openSeaItem returns one embedded item in OpenSea's relay-style page JSON.
  */
 function openSeaItem(chain: string, contract: string, tokenId: string): string {
@@ -709,4 +1373,48 @@ function openSeaItem(chain: string, contract: string, tokenId: string): string {
     `{"id":"x","chain":{"identifier":"${chain}","__typename":"Chain","arch":"EVM",` +
     `"name":"Chain"},"contractAddress":"${contract}","tokenId":"${tokenId}","isFungible":false}`
   );
+}
+
+/**
+ * openSeaCollectionItems wraps item JSON in OpenSea's urql collection-card
+ * relay payload shape.
+ */
+function openSeaCollectionItems(...items: string[]): string {
+  return `{"collectionItems":{"items":[${items.join(',')}],"__typename":"CollectionItemsConnection"}}`;
+}
+
+/**
+ * openSeaCardAnchor returns one rendered OpenSea item-card anchor scope.
+ */
+function openSeaCardAnchor(contract: string, tokenId: string): string {
+  return (
+    `<a class="cursor-pointer flex h-full flex-col" href="/item/ethereum/${contract}/${tokenId}">` +
+    '<article class="relative grow overflow-hidden">' +
+    `<span data-testid="ItemName">Azuki #${tokenId}</span>` +
+    '</article></a>'
+  );
+}
+
+/**
+ * superRareCollectionHtml returns the rendered grid shell used by SuperRare
+ * collection pages around virtualized artwork card articles.
+ */
+function superRareCollectionHtml(cards: string): string {
+  return `
+    <main>
+      <div id="collection">
+        <div class="flex w-full flex-col">
+          <div class="container pt-0">
+            <div data-virtuoso-scroller="true">
+              <div>
+                <div data-testid="virtuoso-item-list" class="grid grid-cols-1">
+                  ${cards}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  `;
 }

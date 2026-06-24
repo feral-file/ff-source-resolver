@@ -1,7 +1,6 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { htmlTokenResult } from '../../site-utils';
 import { parseVerseItem } from './pages/item';
-import { parseVerseSeries } from './pages/series';
+import { extractVerseSeriesTokenFromHtml, parseVerseSeries } from './pages/series';
 
 /**
  * verseAdapter owns Verse URL and page extraction rules.
@@ -21,6 +20,9 @@ export const verseAdapter: SourceSiteAdapter = {
     );
   },
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
-    return htmlTokenResult(this, html);
+    if (parseVerseSeries(url)?.kind !== 'verse-series') {
+      return null;
+    }
+    return extractVerseSeriesTokenFromHtml(html);
   },
 };

@@ -1,5 +1,4 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { htmlTokenResult } from '../../site-utils';
 import { parseFeralFileArtwork } from './pages/artwork';
 import { parseFeralFileSeries } from './pages/series';
 import { parseFeralFileShow } from './pages/show';
@@ -21,8 +20,5 @@ export const feralFileAdapter: SourceSiteAdapter = {
           '/exhibitions/artwork/{tokenId}, /exhibitions/series/{slug}, /exhibitions/shows/{slug}.',
       }
     );
-  },
-  extractFromHtml(url: URL, html: string): ParsedFindInput | null {
-    return htmlTokenResult(this, html);
   },
 };

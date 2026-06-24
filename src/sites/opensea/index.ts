@@ -1,5 +1,4 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { htmlTokenResult } from '../../site-utils';
 import { parseOpenSeaCollection } from './pages/collection';
 import { extractOpenSeaEmbeddedItems } from './pages/embedded-items';
 import { parseOpenSeaItem } from './pages/item';
@@ -20,6 +19,9 @@ export const openSeaAdapter: SourceSiteAdapter = {
     );
   },
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
-    return extractOpenSeaEmbeddedItems(html) ?? htmlTokenResult(this, html);
+    if (parseOpenSeaCollection(url)?.kind !== 'os-collection') {
+      return null;
+    }
+    return extractOpenSeaEmbeddedItems(html);
   },
 };

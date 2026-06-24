@@ -1,6 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { htmlTokenResult } from '../../site-utils';
-import { parseRasterArtwork } from './pages/artwork';
+import { extractRasterArtworkTokenFromHtml, parseRasterArtwork } from './pages/artwork';
 import { parseRasterToken } from './pages/token';
 
 /**
@@ -19,6 +18,6 @@ export const rasterAdapter: SourceSiteAdapter = {
     );
   },
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
-    return htmlTokenResult(this, html);
+    return extractRasterArtworkTokenFromHtml(url, html);
   },
 };

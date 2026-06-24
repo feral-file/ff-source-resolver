@@ -1,6 +1,6 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { htmlTokenResult } from '../../site-utils';
 import { parseArtBlocksCollection } from './pages/collection';
+import { extractArtBlocksTokenFromHtml } from './pages/html';
 import { parseArtBlocksLegacyProject } from './pages/legacy-project';
 import { parseArtBlocksToken } from './pages/token';
 
@@ -21,6 +21,9 @@ export const artBlocksAdapter: SourceSiteAdapter = {
     );
   },
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
-    return htmlTokenResult(this, html);
+    if (parseArtBlocksCollection(url)?.kind !== 'ab-collection') {
+      return null;
+    }
+    return extractArtBlocksTokenFromHtml(url, html);
   },
 };

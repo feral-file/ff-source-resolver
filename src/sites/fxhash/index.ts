@@ -1,5 +1,4 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { htmlTokenResult } from '../../site-utils';
 import { parseFxhashGentk } from './pages/gentk';
 import { parseFxhashIteration } from './pages/iteration';
 import { parseFxhashProject } from './pages/project';
@@ -20,7 +19,10 @@ export const fxhashAdapter: SourceSiteAdapter = {
       }
     );
   },
-  extractFromHtml(url: URL, html: string): ParsedFindInput | null {
-    return htmlTokenResult(this, html);
+  extractFromHtml(): ParsedFindInput | null {
+    // fxhash project and iteration pages do not expose FX1 coordinates in a
+    // stable, narrow DOM scope. Keep page inspection disabled instead of
+    // scanning broad rendered HTML or embedded app state.
+    return null;
   },
 };
