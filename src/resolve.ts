@@ -11,6 +11,7 @@ import type { ParsedFindInput, ResolveTokenInfoOptions, TokenInfoResolution } fr
  * 1. URL/input parsing.
  * 2. Static DOM lookup via caller-provided or global fetch.
  * 3. Optional headless browser rendering via caller-provided renderer.
+ * 4. Narrow public marketplace API lookup where site adapters expose one.
  *
  * The library does not own headless browser infrastructure or secrets; callers
  * provide those adapters when they want rendered-page inspection.
@@ -54,6 +55,11 @@ export async function resolveTokenInfo(
         };
       }
     }
+  }
+
+  const apiParsed = await resolveApiParsed(site, url, parsed, options.fetch);
+  if (apiParsed?.kind === 'token') {
+    return { kind: 'token', method: 'api', source: apiParsed.source, coords: apiParsed.coords };
   }
 
   return {
@@ -110,6 +116,30 @@ async function fetchStaticHtml(url: URL, fetchImpl: typeof fetch | undefined): P
       return null;
     }
     return await response.text();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * resolveApiParsed lets site adapters use public, keyless marketplace APIs
+ * after deterministic URL, static DOM, and optional rendered DOM paths miss.
+ */
+async function resolveApiParsed(
+  site: NonNullable<ReturnType<typeof matchSite>>,
+  url: URL,
+  parsed: ParsedFindInput | null,
+  fetchImpl: typeof fetch | undefined
+): Promise<ParsedFindInput | null> {
+  if (!site.resolveFromApi) {
+    return null;
+  }
+  const doFetch = fetchImpl ?? globalThis.fetch;
+  if (!doFetch) {
+    return null;
+  }
+  try {
+    return normalizeParsedFindInput(await site.resolveFromApi(url, parsed, doFetch));
   } catch {
     return null;
   }

@@ -1,4 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import { resolveFxhashFromApi } from './pages/api';
 import { parseFxhashGentk } from './pages/gentk';
 import { parseFxhashIteration } from './pages/iteration';
 import { parseFxhashProject } from './pages/project';
@@ -24,5 +25,8 @@ export const fxhashAdapter: SourceSiteAdapter = {
     // stable, narrow DOM scope. Keep page inspection disabled instead of
     // scanning broad rendered HTML or embedded app state.
     return null;
+  },
+  async resolveFromApi(_url, parsed, fetchImpl): Promise<ParsedFindInput | null> {
+    return resolveFxhashFromApi(parsed, fetchImpl);
   },
 };

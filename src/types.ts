@@ -38,6 +38,11 @@ export interface SourceSiteAdapter {
   readonly hosts: readonly string[];
   parseUrl(url: URL): ParsedFindInput;
   extractFromHtml?(url: URL, html: string): ParsedFindInput | null;
+  resolveFromApi?(
+    url: URL,
+    parsed: ParsedFindInput | null,
+    fetchImpl: typeof fetch
+  ): Promise<ParsedFindInput | null>;
 }
 
 /**
@@ -54,7 +59,7 @@ export interface ResolveTokenInfoOptions {
   renderer?: HeadlessPageRenderer;
 }
 
-export type TokenInfoResolutionMethod = 'url' | 'dom' | 'headless';
+export type TokenInfoResolutionMethod = 'url' | 'dom' | 'headless' | 'api';
 
 export type TokenInfoResolution =
   | {

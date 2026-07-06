@@ -56,6 +56,7 @@ token ids must fit `uint256`; Tezos token ids are validated as decimal nats.
 1. URL/input parsing.
 2. Static DOM lookup using `fetch`.
 3. Optional caller-provided headless browser rendering.
+4. Narrow public marketplace API lookup where site adapters expose one.
 
 The browser path is an interface only. This package has no runtime browser
 dependency and does not own credentials or hosted infrastructure.

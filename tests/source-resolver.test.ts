@@ -622,6 +622,50 @@ describe('resolveTokenInfo fallback order', () => {
     assert.equal(result.coords.tokenId, '5001410');
   });
 
+  test('public API lookup runs after static DOM and headless miss', async () => {
+    let rendered = false;
+    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === 'https://api.fxhash.xyz/graphql') {
+        return Response.json({
+          data: {
+            objkt: {
+              onChainId: 1284515,
+              gentkContractAddress: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+            },
+          },
+        });
+      }
+      return new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    };
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        rendered = true;
+        return '<html><body>No narrow fxhash token evidence</body></html>';
+      },
+    };
+
+    const result = await resolveTokenInfo('https://www.fxhash.xyz/iteration/acequia-342', {
+      fetch: fetchImpl as typeof fetch,
+      renderer,
+    });
+
+    assert.equal(rendered, true);
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, {
+      chain: 'tezos',
+      contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+      tokenId: '1284515',
+    });
+  });
+
   test('resolveFindInput returns page-inspected token before the original series marker', async () => {
     const fetchImpl = async (): Promise<Response> =>
       new Response(verseItemCard(ETH_CONTRACT, '42'), {
