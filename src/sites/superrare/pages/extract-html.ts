@@ -2,6 +2,8 @@ import type { ParsedFindInput } from '../../../types';
 import { sourceTokenResult } from '../../../helpers';
 
 const ARTWORK_PATH = /\/artwork\/eth\/(0x[a-fA-F0-9]{40})\/(\d+)/i;
+const STATIC_TOKEN_OBJECT =
+  /tokenId\\+":?(\d+),\\+"contractAddress\\+":\\+"(0x[a-fA-F0-9]{40})\\+",\\+"chainId\\+":\\+"1\\+"/g;
 const MAX_COLLECTION_SCAN_CHARS = 120_000;
 
 interface ElementSlice {
@@ -16,13 +18,26 @@ interface ElementSlice {
  * token regexes scoped to those cards so unrelated page paths do not win.
  */
 export function extractSuperRareCollectionArtwork(url: URL, html: string): ParsedFindInput | null {
+  return extractSuperRareCollectionArtworks(url, html)[0] ?? null;
+}
+
+/**
+ * extractSuperRareCollectionArtworks extracts static RSC token records and
+ * rendered collection artwork links from SuperRare collection pages.
+ */
+export function extractSuperRareCollectionArtworks(url: URL, html: string): ParsedFindInput[] {
   if (!/^\/collection\/0x[a-fA-F0-9]{40}\/?$/.test(url.pathname)) {
-    return null;
+    return [];
+  }
+
+  const staticTokens = extractStaticTokenObjects(html);
+  if (staticTokens.length > 0) {
+    return staticTokens;
   }
 
   const collection = extractElementByAttribute(html, 'id', 'collection');
   if (!collection) {
-    return null;
+    return [];
   }
 
   const list = extractElementByAttribute(
@@ -33,16 +48,17 @@ export function extractSuperRareCollectionArtwork(url: URL, html: string): Parse
     Math.min(collection.end, collection.start + MAX_COLLECTION_SCAN_CHARS)
   );
   if (!list || list.end > collection.end) {
-    return null;
+    return [];
   }
 
+  const results: ParsedFindInput[] = [];
   for (const card of extractElementsByTag(html, 'article', list.start, list.end)) {
     const parsed = extractArtworkPath(html.slice(card.start, card.end));
     if (parsed) {
-      return parsed;
+      results.push(parsed);
     }
   }
-  return null;
+  return results;
 }
 
 function extractArtworkPath(scope: string): ParsedFindInput | null {
@@ -52,6 +68,20 @@ function extractArtworkPath(scope: string): ParsedFindInput | null {
   }
 
   return sourceTokenResult('superrare', 'ethereum', match[1].toLowerCase(), match[2]);
+}
+
+function extractStaticTokenObjects(html: string): ParsedFindInput[] {
+  const results: ParsedFindInput[] = [];
+  const visible = stripIgnoredHtmlRegions(html);
+  STATIC_TOKEN_OBJECT.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = STATIC_TOKEN_OBJECT.exec(visible))) {
+    const result = sourceTokenResult('superrare', 'ethereum', match[2].toLowerCase(), match[1]);
+    if (result) {
+      results.push(result);
+    }
+  }
+  return results;
 }
 
 function extractElementByAttribute(

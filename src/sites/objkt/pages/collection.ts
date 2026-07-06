@@ -1,18 +1,14 @@
 import type { ParsedFindInput } from '../../../types';
 
 /**
- * parseObjktCollection recognizes Objkt collection pages and keeps them as an
- * explicit unsupported result. Collection pages do not identify a single token
- * without a marketplace-specific selection policy.
+ * parseObjktCollection recognizes Objkt collection pages. Current collection
+ * token links use aliases, so rendered HTML extraction discovers the KT1
+ * collection contract before building token coordinates.
  */
 export function parseObjktCollection(url: URL): ParsedFindInput | null {
-  if (url.pathname.startsWith('/collections/') || url.pathname.startsWith('/collection/')) {
-    return {
-      kind: 'unsupported',
-      reason:
-        'Objkt collection URLs are not yet supported in v1. Paste a specific token URL ' +
-        '(objkt.com/tokens/{contract-or-alias}/{tokenId}) or use `tezos:{contract}:{tokenId}`.',
-    };
+  const m = /^\/collections?\/([A-Za-z0-9][A-Za-z0-9_-]*)\/?$/.exec(url.pathname);
+  if (m) {
+    return { kind: 'objkt-collection', slug: m[1] };
   }
   return null;
 }

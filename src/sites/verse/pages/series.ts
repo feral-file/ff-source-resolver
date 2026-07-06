@@ -30,13 +30,25 @@ export function parseVerseSeries(url: URL): ParsedFindInput | null {
  * whole-document path scanning risks picking up unrelated cached or nav URLs.
  */
 export function extractVerseSeriesTokenFromHtml(html: string): ParsedFindInput | null {
+  return extractVerseSeriesTokensFromHtml(html)[0] ?? null;
+}
+
+/**
+ * extractVerseSeriesTokensFromHtml scans rendered Verse item-card scopes and
+ * returns every Ethereum item coordinate found in first-seen order.
+ */
+export function extractVerseSeriesTokensFromHtml(html: string): ParsedFindInput[] {
+  const results: ParsedFindInput[] = [];
   for (const scope of verseItemCardScopes(html)) {
     const m = VERSE_ITEM_PATH.exec(stripIgnoredHtmlRegions(scope));
     if (m) {
-      return sourceTokenResult('verse', 'ethereum', m[1], m[2]);
+      const result = sourceTokenResult('verse', 'ethereum', m[1], m[2]);
+      if (result) {
+        results.push(result);
+      }
     }
   }
-  return null;
+  return results;
 }
 
 /**

@@ -6,6 +6,9 @@ const OBJKT_IMAGE_META_ATTR =
   /\b(?:property|name)\s*=\s*(["'])(?:og:image|twitter:image|fc:frame:image)\1/i;
 const OBJKT_ASSET_MEDIA_TOKEN =
   /https?:\/\/assets\.objkt\.media\/file\/assets-\d+\/(KT[A-Za-z0-9]+)\/(\d+)\/social(?:[?"'\s>]|$)/;
+const OBJKT_COLLECTION_CONTRACT = /https?:\/\/tzkt\.io\/(KT[A-Za-z0-9]+)(?:[/?#"'\s<>]|$)/gi;
+const OBJKT_COLLECTION_TOKEN =
+  /\bhref\s*=\s*(["'])(?:https?:\/\/(?:www\.)?objkt\.com)?\/tokens\/[A-Za-z][A-Za-z0-9_-]*\/(\d+)(?:[?#][^"']*)?\1/gi;
 const META_TAG = /<meta\b[^>]*>/gi;
 const MAX_META_SCOPE_LENGTH = 1200;
 
@@ -47,6 +50,33 @@ export function extractObjktTokenFromHtml(url: URL, html: string): ParsedFindInp
     }
   }
   return null;
+}
+
+/**
+ * extractObjktCollectionTokensFromHtml extracts rendered Objkt collection token
+ * links. Collection token URLs often use an alias rather than a KT1 contract,
+ * so the page must also expose one TzKT collection contract link.
+ */
+export function extractObjktCollectionTokensFromHtml(url: URL, html: string): ParsedFindInput[] {
+  if (!/^\/collections?\/[A-Za-z0-9][A-Za-z0-9_-]*\/?$/.test(url.pathname)) {
+    return [];
+  }
+  const contract = extractObjktCollectionContract(html);
+  if (!contract) {
+    return [];
+  }
+
+  const results: ParsedFindInput[] = [];
+  const visible = stripIgnoredHtmlRegions(html);
+  OBJKT_COLLECTION_TOKEN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = OBJKT_COLLECTION_TOKEN.exec(visible))) {
+    const result = sourceTokenResult('objkt', 'tezos', contract, match[2]);
+    if (result) {
+      results.push(result);
+    }
+  }
+  return results;
 }
 
 /**
@@ -107,4 +137,22 @@ function extractObjktMetaToken(scope: string, pageTokenId: string): ParsedFindIn
     return null;
   }
   return sourceTokenResult('objkt', 'tezos', match[1], match[2]);
+}
+
+function extractObjktCollectionContract(html: string): string | null {
+  const visible = stripIgnoredHtmlRegions(html);
+  const contracts = new Set<string>();
+  OBJKT_COLLECTION_CONTRACT.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = OBJKT_COLLECTION_CONTRACT.exec(visible))) {
+    contracts.add(match[1]);
+  }
+  return contracts.size === 1 ? [...contracts][0] : null;
+}
+
+function stripIgnoredHtmlRegions(html: string): string {
+  return html.replace(
+    /<!--[\s\S]*?-->|<(script|style|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+    ''
+  );
 }

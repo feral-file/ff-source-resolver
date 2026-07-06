@@ -1,6 +1,8 @@
 import type { ParsedFindInput } from '../../../types';
 import { sourceTokenResult } from '../../../helpers';
 
+type ParsedToken = Extract<ParsedFindInput, { kind: 'token' }>;
+
 interface Candidate {
   chain: string;
   contract: string;
@@ -24,21 +26,19 @@ const OPEN_SEA_CARD_MARKERS = ['<article', 'data-testid="ItemName"', "data-testi
  * collection pages nondeterministic.
  */
 export function extractOpenSeaEmbeddedItems(html: string): ParsedFindInput | null {
+  const tokens = extractOpenSeaEmbeddedItemTokens(html);
   const byContract = new Map<string, Candidate>();
 
-  for (const scope of collectOpenSeaItemScopes(html)) {
-    const token = extractTokenFromOpenSeaScope(scope);
-    if (!token) {
-      continue;
-    }
-    const contract = token.contract.toLowerCase();
+  for (const token of tokens) {
+    const contract = token.coords.contract.toLowerCase();
     const candidate = byContract.get(contract) ?? {
-      chain: token.chain,
+      chain: token.coords.chain,
       contract,
-      tokenId: token.tokenId,
+      tokenId: BigInt(token.coords.tokenId),
       count: 0,
     };
-    candidate.tokenId = token.tokenId < candidate.tokenId ? token.tokenId : candidate.tokenId;
+    const tokenId = BigInt(token.coords.tokenId);
+    candidate.tokenId = tokenId < candidate.tokenId ? tokenId : candidate.tokenId;
     candidate.count += 1;
     byContract.set(contract, candidate);
   }
@@ -53,6 +53,25 @@ export function extractOpenSeaEmbeddedItems(html: string): ParsedFindInput | nul
     return null;
   }
   return sourceTokenResult('opensea', 'ethereum', best.contract, best.tokenId.toString());
+}
+
+/**
+ * extractOpenSeaEmbeddedItemTokens returns every scoped Ethereum token
+ * coordinate exposed by a collection page.
+ */
+export function extractOpenSeaEmbeddedItemTokens(html: string): ParsedToken[] {
+  const results: ParsedToken[] = [];
+  for (const scope of collectOpenSeaItemScopes(html)) {
+    const token = extractTokenFromOpenSeaScope(scope);
+    if (!token || token.chain !== 'ethereum') {
+      continue;
+    }
+    const result = sourceTokenResult('opensea', 'ethereum', token.contract, token.tokenId.toString());
+    if (result?.kind === 'token') {
+      results.push(result);
+    }
+  }
+  return results;
 }
 
 /**

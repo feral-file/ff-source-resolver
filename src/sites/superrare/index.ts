@@ -1,7 +1,10 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
 import { parseSuperRareArtwork } from './pages/artwork';
 import { parseSuperRareCollection } from './pages/collection';
-import { extractSuperRareCollectionArtwork } from './pages/extract-html';
+import {
+  extractSuperRareCollectionArtwork,
+  extractSuperRareCollectionArtworks,
+} from './pages/extract-html';
 
 /**
  * superRareAdapter owns SuperRare URL and page extraction rules.
@@ -23,5 +26,8 @@ export const superRareAdapter: SourceSiteAdapter = {
   },
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
     return extractSuperRareCollectionArtwork(url, html);
+  },
+  extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
+    return extractSuperRareCollectionArtworks(url, html);
   },
 };

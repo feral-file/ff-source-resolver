@@ -1,4 +1,5 @@
 import type { ParsedFindInput } from '../../../types';
+import { sourceTokenResult } from '../../../helpers';
 import { parseArtBlocksToken } from './token';
 
 const CARD_SCOPE_CLASS_TOKENS = ['self-start', 'h-fit', 'w-full', 'flex-col'];
@@ -9,12 +10,20 @@ const CARD_LINK_SCOPE_MAX_LENGTH = 1200;
 const ART_BLOCKS_TOKEN_HREF =
   /\/(?:token\/(?:\d+\/0x[a-fA-F0-9]{40}\/\d+|0x[a-fA-F0-9]{40}-\d+)|marketplace\/collections\/0x[a-fA-F0-9]{40}\/tokens\/\d+)/i;
 const HREF_ATTRIBUTE = /\bhref\s*=\s*(["'])([^"']+)\1/gi;
+const ART_BLOCKS_METADATA_TOKEN =
+  /"chain_id":1[\s\S]{0,160}?"token_id":"(\d+)"[\s\S]{0,500}?"contract_address":"(0x[a-fA-F0-9]{40})"[\s\S]{0,160}?"__typename":"tokens_metadata"/g;
+const ART_BLOCKS_METADATA_TOKEN_ALT =
+  /"contract_address":"(0x[a-fA-F0-9]{40})"[\s\S]{0,500}?"token_id":"(\d+)"[\s\S]{0,500}?"chain_id":1[\s\S]{0,160}?"__typename":"tokens_metadata"/g;
 
 /**
  * extractArtBlocksTokenFromHtml extracts token links only from repeated
  * collection card/link scopes observed on rendered Art Blocks collection pages.
  */
 export function extractArtBlocksTokenFromHtml(url: URL, html: string): ParsedFindInput | null {
+  const [metadataToken] = extractArtBlocksTokensFromHtml(url, html);
+  if (metadataToken) {
+    return metadataToken;
+  }
   for (const scope of artBlocksTokenScopes(html)) {
     const result = extractTokenFromScope(url, scope);
     if (result) {
@@ -22,6 +31,53 @@ export function extractArtBlocksTokenFromHtml(url: URL, html: string): ParsedFin
     }
   }
   return null;
+}
+
+/**
+ * extractArtBlocksTokensFromHtml extracts all token coordinates from current
+ * static collection Flight payloads and rendered collection card links.
+ */
+export function extractArtBlocksTokensFromHtml(url: URL, html: string): ParsedFindInput[] {
+  if (parseArtBlocksCollectionMarker(url) !== 'collection') {
+    return [];
+  }
+  return [...extractMetadataTokens(html), ...extractCardTokens(url, html)];
+}
+
+function parseArtBlocksCollectionMarker(url: URL): 'collection' | null {
+  return /^\/collections?\/[a-z0-9][a-z0-9-]*\/?$/.test(url.pathname) ? 'collection' : null;
+}
+
+function extractMetadataTokens(html: string): ParsedFindInput[] {
+  const visible = stripIgnoredHtmlRegions(html);
+  const results: ParsedFindInput[] = [];
+  ART_BLOCKS_METADATA_TOKEN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ART_BLOCKS_METADATA_TOKEN.exec(visible))) {
+    const result = sourceTokenResult('artblocks', 'ethereum', match[2], match[1]);
+    if (result) {
+      results.push(result);
+    }
+  }
+  ART_BLOCKS_METADATA_TOKEN_ALT.lastIndex = 0;
+  while ((match = ART_BLOCKS_METADATA_TOKEN_ALT.exec(visible))) {
+    const result = sourceTokenResult('artblocks', 'ethereum', match[1], match[2]);
+    if (result) {
+      results.push(result);
+    }
+  }
+  return results;
+}
+
+function extractCardTokens(url: URL, html: string): ParsedFindInput[] {
+  const results: ParsedFindInput[] = [];
+  for (const scope of artBlocksTokenScopes(html)) {
+    const result = extractTokenFromScope(url, scope);
+    if (result) {
+      results.push(result);
+    }
+  }
+  return results;
 }
 
 /**

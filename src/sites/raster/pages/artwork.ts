@@ -29,17 +29,26 @@ export function parseRasterArtwork(url: URL): ParsedFindInput | null {
  * observed `ArtItem_*` card/link scopes.
  */
 export function extractRasterArtworkTokenFromHtml(url: URL, html: string): ParsedFindInput | null {
+  return extractRasterArtworkTokensFromHtml(url, html)[0] ?? null;
+}
+
+/**
+ * extractRasterArtworkTokensFromHtml extracts all rendered Raster artwork-card
+ * token links from a collection artwork page.
+ */
+export function extractRasterArtworkTokensFromHtml(url: URL, html: string): ParsedFindInput[] {
   if (!parseRasterArtwork(url)) {
-    return null;
+    return [];
   }
 
+  const results: ParsedFindInput[] = [];
   for (const scope of rasterArtworkScopes(html)) {
     const result = extractRasterTokenFromScope(scope);
     if (result) {
-      return result;
+      results.push(result);
     }
   }
-  return null;
+  return results;
 }
 
 /**

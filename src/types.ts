@@ -23,6 +23,7 @@ export type ParsedFindInput =
   | { kind: 'token'; coords: TokenCoords; source: 'raw' | MarketplaceSource }
   | { kind: 'address'; chain: IndexerChain; address: string }
   | { kind: 'ff-url'; urlKind: FeralFileUrlKind; identifier: string }
+  | { kind: 'objkt-collection'; slug: string }
   | { kind: 'objkt-alias'; alias: string; tokenId: string }
   | { kind: 'ab-collection'; slug: string }
   | { kind: 'os-collection'; slug: string }
@@ -38,6 +39,17 @@ export interface SourceSiteAdapter {
   readonly hosts: readonly string[];
   parseUrl(url: URL): ParsedFindInput;
   extractFromHtml?(url: URL, html: string): ParsedFindInput | null;
+  extractTokensFromHtml?(url: URL, html: string): readonly ParsedFindInput[];
+  resolveFromApi?(
+    url: URL,
+    parsed: ParsedFindInput | null,
+    fetchImpl: typeof fetch
+  ): Promise<ParsedFindInput | null>;
+  resolveTokensFromApi?(
+    url: URL,
+    parsed: ParsedFindInput | null,
+    fetchImpl: typeof fetch
+  ): Promise<readonly ParsedFindInput[]>;
 }
 
 /**
@@ -54,7 +66,7 @@ export interface ResolveTokenInfoOptions {
   renderer?: HeadlessPageRenderer;
 }
 
-export type TokenInfoResolutionMethod = 'url' | 'dom' | 'headless';
+export type TokenInfoResolutionMethod = 'url' | 'dom' | 'headless' | 'api';
 
 export type TokenInfoResolution =
   | {
@@ -62,5 +74,14 @@ export type TokenInfoResolution =
       method: TokenInfoResolutionMethod;
       source: 'raw' | MarketplaceSource;
       coords: TokenCoords;
+    }
+  | { kind: 'not-found'; reason: string };
+
+export type TokenInfosResolution =
+  | {
+      kind: 'tokens';
+      method: TokenInfoResolutionMethod;
+      source: 'raw' | MarketplaceSource;
+      coords: TokenCoords[];
     }
   | { kind: 'not-found'; reason: string };

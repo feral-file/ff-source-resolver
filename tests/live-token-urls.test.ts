@@ -26,6 +26,7 @@ interface LiveSiteUrlFixture {
 type ExpectedParsedInput =
   | { kind: 'token'; source: string; coords: TokenCoords }
   | { kind: 'unsupported'; reasonIncludes?: string }
+  | { kind: 'objkt-collection'; slug: string }
   | { kind: 'objkt-alias'; alias: string; tokenId: string }
   | { kind: 'ab-collection'; slug: string }
   | { kind: 'os-collection'; slug: string }
@@ -84,7 +85,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
     page: 'collection',
     url: 'https://objkt.com/collections/KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton',
     acceptedFinalUrls: ['https://objkt.com/collections/hicetnunc'],
-    expected: { kind: 'unsupported', reasonIncludes: 'collection URLs' },
+    expected: { kind: 'objkt-collection', slug: 'KT1RJ6PbjHpwc3M5rw5s2Nbmefwbuwbdxton' },
     browserNote: 'Browser title: hic et nunc.',
   },
   {

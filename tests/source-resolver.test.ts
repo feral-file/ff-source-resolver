@@ -11,6 +11,7 @@ import {
   parseFindInput,
   resolveFindInput,
   resolveTokenInfo,
+  resolveTokenInfos,
 } from '../src';
 import type { HeadlessPageRenderer } from '../src';
 
@@ -175,9 +176,9 @@ describe('parseFindInput', () => {
     assert.equal(result?.kind, 'token');
   });
 
-  test('Objkt collection URL remains unsupported', () => {
+  test('Objkt collection URL parses to collection marker', () => {
     const result = parseFindInput('https://objkt.com/collections/KT1Whatever');
-    assert.equal(result?.kind, 'unsupported');
+    assert.equal(result?.kind, 'objkt-collection');
   });
 
   test('Objkt token URL with invalid KT1 checksum remains unsupported', () => {
@@ -270,6 +271,15 @@ describe('parseFindInput', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.slug, 'garden-monoliths-215');
+  });
+
+  test('fxhash dotted iteration slug parses to fxhash-iteration marker', () => {
+    const result = parseFindInput('https://www.fxhash.xyz/iteration/monogrid-1.1-ce-255');
+    assert.equal(result?.kind, 'fxhash-iteration');
+    if (result?.kind !== 'fxhash-iteration') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.slug, 'monogrid-1.1-ce-255');
   });
 
   test('fxhash bare iteration URL remains unsupported', () => {
@@ -622,6 +632,50 @@ describe('resolveTokenInfo fallback order', () => {
     assert.equal(result.coords.tokenId, '5001410');
   });
 
+  test('public API lookup runs after static DOM and headless miss', async () => {
+    let rendered = false;
+    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === 'https://api.fxhash.xyz/graphql') {
+        return Response.json({
+          data: {
+            objkt: {
+              onChainId: 824876,
+              gentkContractAddress: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+            },
+          },
+        });
+      }
+      return new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    };
+    const renderer: HeadlessPageRenderer = {
+      async render(): Promise<string> {
+        rendered = true;
+        return '<html><body>No narrow fxhash token evidence</body></html>';
+      },
+    };
+
+    const result = await resolveTokenInfo('https://www.fxhash.xyz/iteration/monogrid-1.1-ce-255', {
+      fetch: fetchImpl as typeof fetch,
+      renderer,
+    });
+
+    assert.equal(rendered, true);
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, {
+      chain: 'tezos',
+      contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+      tokenId: '824876',
+    });
+  });
+
   test('resolveFindInput returns page-inspected token before the original series marker', async () => {
     const fetchImpl = async (): Promise<Response> =>
       new Response(verseItemCard(ETH_CONTRACT, '42'), {
@@ -636,6 +690,203 @@ describe('resolveTokenInfo fallback order', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.coords.tokenId, '42');
+  });
+});
+
+describe('resolveTokenInfos collection support', () => {
+  test('token URL resolves to a one-item token array', async () => {
+    const result = await resolveTokenInfos(`ethereum:${ETH_CONTRACT}:5001410`);
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'url');
+    assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
+  });
+
+  test('Objkt collection extracts rendered alias token links using the collection KT1', async () => {
+    const html = [
+      '<a href="https://tzkt.io/KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd">Contract</a>',
+      '<a href="/tokens/objkt-paint-98/914">Token</a>',
+      '<a href="/tokens/objkt-paint-98/913?auction=e:1">Token</a>',
+      '<a href="/tokens/objkt-paint-98/914">Duplicate</a>',
+    ].join('');
+    const result = await resolveTokenInfos('https://objkt.com/collections/objkt-paint-98', {
+      fetch: htmlFetch('<html>client shell only</html>') as typeof fetch,
+      renderer: { async render(): Promise<string> { return html; } },
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '913' },
+    ]);
+  });
+
+  test('Art Blocks collection extracts static tokens_metadata records into an array', async () => {
+    const html = [
+      artBlocksMetadataToken(ETH_CONTRACT, '255000641'),
+      artBlocksMetadataToken(ETH_CONTRACT, '255000642'),
+      artBlocksMetadataToken(ETH_CONTRACT, '255000641'),
+    ].join('');
+    const result = await resolveTokenInfos('https://www.artblocks.io/collection/screens-by-thomas-lin-pedersen', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000641' },
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000642' },
+    ]);
+  });
+
+  test('OpenSea collection extracts every scoped Ethereum item', async () => {
+    const html = openSeaCollectionItems(
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97'),
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '15'),
+      openSeaItem('matic', OPENSEA_STRAY_CONTRACT, '1'),
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '15')
+    );
+    const result = await resolveTokenInfos('https://opensea.io/collection/a-eye-after-johannes-itten', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
+      { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '15' },
+    ]);
+  });
+
+  test('SuperRare collection extracts static escaped token records', async () => {
+    const html = [
+      'tokenId\\":1,\\"contractAddress\\":\\"0x3e930455dcbf4bc69de9926bdaf8ef782398786f\\",\\"chainId\\":\\"1\\"',
+      'tokenId\\":2,\\"contractAddress\\":\\"0x3e930455dcbf4bc69de9926bdaf8ef782398786f\\",\\"chainId\\":\\"1\\"',
+    ].join('');
+    const result = await resolveTokenInfos(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f', tokenId: '1' },
+      { chain: 'ethereum', contract: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f', tokenId: '2' },
+    ]);
+  });
+
+  test('Verse series extracts rendered item card tokens into an array', async () => {
+    const html = [verseItemCard(ETH_CONTRACT, '216'), verseItemCard(ETH_CONTRACT, '178')].join('');
+    const result = await resolveTokenInfos('https://verse.works/series/example-series', {
+      fetch: htmlFetch('<html>client shell only</html>') as typeof fetch,
+      renderer: { async render(): Promise<string> { return html; } },
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'headless');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '216' },
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '178' },
+    ]);
+  });
+
+  test('Raster artwork extracts rendered token links into an array', async () => {
+    const html = [rasterArtworkCard(ETH_CONTRACT, '95'), rasterArtworkCard(ETH_CONTRACT, '100')].join('');
+    const result = await resolveTokenInfos('https://raster.art/artwork/split-logic-by-ricky-retouch', {
+      fetch: htmlFetch('<html>client shell only</html>') as typeof fetch,
+      renderer: { async render(): Promise<string> { return html; } },
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '95' },
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '100' },
+    ]);
+  });
+
+  test('Raster artwork resolves token arrays through the public kit API', async () => {
+    const result = await resolveTokenInfos('https://raster.art/artwork/split-logic-by-ricky-retouch', {
+      fetch: rasterApiFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '95' },
+      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '100' },
+    ]);
+  });
+
+  test('fxhash project resolves full collection through public GraphQL', async () => {
+    const result = await resolveTokenInfos('https://www.fxhash.xyz/generative/slug/the-fable', {
+      fetch: fxhashProjectFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1565369' },
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1597012' },
+    ]);
+  });
+
+  test('Feral File show resolves all series artwork tokens through public API', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/shows/ex-nihilo-a3c', {
+      fetch: feralFileShowFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '1' },
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '2' },
+      { chain: 'tezos', contract: TEZOS_CONTRACT, tokenId: '9201' },
+    ]);
+  });
+
+  test('Feral File series resolves artwork tokens through public API', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/series/cosmos-simulacrum', {
+      fetch: feralFileSeriesFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '7' },
+      { chain: 'tezos', contract: TEZOS_CONTRACT, tokenId: '8' },
+    ]);
   });
 });
 
@@ -1252,6 +1503,20 @@ describe('SuperRare DOM extraction', () => {
     assert.equal(result.kind, 'not-found');
   });
 
+  test('ignores visible SuperRare artwork paths outside the collection card scope', async () => {
+    const html =
+      '<html><nav><a href="/artwork/eth/0x1111111111111111111111111111111111111111/999">Cached</a></nav>' +
+      superRareCollectionHtml('<article class="group flex flex-col">No artwork link</article>') +
+      '</html>';
+
+    const result = await resolveTokenInfos(
+      'https://superrare.com/collection/0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
+      { fetch: htmlFetch(html) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
+  });
+
   test('ignores scoped-looking SuperRare collection markup inside scripts and comments', async () => {
     const scopedMarkup = superRareCollectionHtml(`
       <article class="group flex flex-col">
@@ -1417,4 +1682,122 @@ function superRareCollectionHtml(cards: string): string {
       </div>
     </main>
   `;
+}
+
+function artBlocksMetadataToken(contract: string, tokenId: string): string {
+  return (
+    `{"chain_id":1,"token_id":"${tokenId}",` +
+    `"contract_address":"${contract}","__typename":"tokens_metadata"}`
+  );
+}
+
+function fxhashProjectFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://api.fxhash.xyz/graphql') {
+      return Response.json({
+        data: {
+          generativeToken: {
+            entireCollection: [
+              {
+                onChainId: 1565369,
+                gentkContractAddress: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+              },
+              {
+                onChainId: 1597012,
+                gentkContractAddress: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+              },
+            ],
+          },
+        },
+      });
+    }
+    return new Response('<html>client shell only</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
+}
+
+function feralFileShowFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://feralfile.com/api/exhibitions/ex-nihilo-a3c') {
+      return Response.json({ result: { id: 'show-uuid', series: [{ id: 'series-a' }, { id: 'series-b' }] } });
+    }
+    if (url === 'https://feralfile.com/api/artworks?seriesID=series-a') {
+      return Response.json({
+        result: [
+          { chain: 'ethereum', contractAddress: ETH_CONTRACT, tokenID: '1' },
+          { chain: 'polygon', contractAddress: ETH_CONTRACT, tokenID: '2' },
+        ],
+      });
+    }
+    if (url === 'https://feralfile.com/api/artworks?seriesID=series-b') {
+      return Response.json({
+        result: [
+          { chain: 'ethereum', contractAddress: ETH_CONTRACT, tokenID: '2' },
+          { chain: 'tezos', contractAddress: TEZOS_CONTRACT, tokenID: '9201' },
+        ],
+      });
+    }
+    return new Response('<html>client shell only</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
+}
+
+function feralFileSeriesFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://feralfile.com/api/series/cosmos-simulacrum') {
+      return Response.json({ result: { id: 'series-uuid' } });
+    }
+    if (url === 'https://feralfile.com/api/artworks?seriesID=series-uuid') {
+      return Response.json({
+        result: [
+          { chain: 'ethereum', contractAddress: ETH_CONTRACT, tokenID: '7' },
+          { chain: 'tezos', contractAddress: TEZOS_CONTRACT, tokenID: '8' },
+        ],
+      });
+    }
+    return new Response('<html>client shell only</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
+}
+
+function rasterApiFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://raster.art/artwork/split-logic-by-ricky-retouch') {
+      return new Response('{"children":[["$","$L25",null,{"artworkId\\":2886465}]]}', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=0')) {
+      return Response.json({
+        tokens: [
+          {
+            chain_id: 'eip155:1',
+            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+            token_id: '95',
+          },
+          {
+            chain_id: 'eip155:1',
+            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+            token_id: '100',
+          },
+        ],
+        cursor: 2,
+      });
+    }
+    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=2')) {
+      return Response.json({ tokens: [], cursor: 2 });
+    }
+    return new Response('not found', { status: 404 });
+  };
 }
