@@ -272,6 +272,15 @@ describe('parseFindInput', () => {
     assert.equal(result.slug, 'garden-monoliths-215');
   });
 
+  test('fxhash dotted iteration slug parses to fxhash-iteration marker', () => {
+    const result = parseFindInput('https://www.fxhash.xyz/iteration/monogrid-1.1-ce-255');
+    assert.equal(result?.kind, 'fxhash-iteration');
+    if (result?.kind !== 'fxhash-iteration') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.slug, 'monogrid-1.1-ce-255');
+  });
+
   test('fxhash bare iteration URL remains unsupported', () => {
     const result = parseFindInput('https://www.fxhash.xyz/iteration/');
     assert.equal(result?.kind, 'unsupported');
@@ -630,7 +639,7 @@ describe('resolveTokenInfo fallback order', () => {
         return Response.json({
           data: {
             objkt: {
-              onChainId: 1284515,
+              onChainId: 824876,
               gentkContractAddress: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
             },
           },
@@ -648,7 +657,7 @@ describe('resolveTokenInfo fallback order', () => {
       },
     };
 
-    const result = await resolveTokenInfo('https://www.fxhash.xyz/iteration/acequia-342', {
+    const result = await resolveTokenInfo('https://www.fxhash.xyz/iteration/monogrid-1.1-ce-255', {
       fetch: fetchImpl as typeof fetch,
       renderer,
     });
@@ -662,7 +671,7 @@ describe('resolveTokenInfo fallback order', () => {
     assert.deepEqual(result.coords, {
       chain: 'tezos',
       contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
-      tokenId: '1284515',
+      tokenId: '824876',
     });
   });
 
