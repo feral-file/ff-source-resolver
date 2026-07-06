@@ -62,6 +62,30 @@ export function normalizeParsedFindInput(result: ParsedFindInput | null): Parsed
 }
 
 /**
+ * normalizeParsedFindInputs keeps valid findings in their first-seen order and
+ * removes duplicate token coordinates from collection extractors.
+ */
+export function normalizeParsedFindInputs(results: readonly ParsedFindInput[]): ParsedFindInput[] {
+  const normalized: ParsedFindInput[] = [];
+  const seenTokens = new Set<string>();
+  for (const result of results) {
+    const item = normalizeParsedFindInput(result);
+    if (!item) {
+      continue;
+    }
+    if (item.kind === 'token') {
+      const key = `${item.coords.chain}:${item.coords.contract}:${item.coords.tokenId}`;
+      if (seenTokens.has(key)) {
+        continue;
+      }
+      seenTokens.add(key);
+    }
+    normalized.push(item);
+  }
+  return normalized;
+}
+
+/**
  * hasHostMatch checks both exact hosts and subdomains against a site host
  * allowlist. The caller strips a leading `www.` before this helper runs.
  */

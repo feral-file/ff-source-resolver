@@ -1,6 +1,10 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
 import { parseObjktCollection } from './pages/collection';
-import { extractObjktTokenFromHtml, parseObjktToken } from './pages/token';
+import {
+  extractObjktCollectionTokensFromHtml,
+  extractObjktTokenFromHtml,
+  parseObjktToken,
+} from './pages/token';
 
 /**
  * objktAdapter owns Objkt URL and page extraction rules.
@@ -19,5 +23,8 @@ export const objktAdapter: SourceSiteAdapter = {
   },
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
     return extractObjktTokenFromHtml(url, html);
+  },
+  extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
+    return extractObjktCollectionTokensFromHtml(url, html);
   },
 };

@@ -10,5 +10,9 @@ export function parseFxhashProject(url: URL): ParsedFindInput | null {
   if (project) {
     return { kind: 'fxhash-project', slug: project[1] };
   }
+  const generativeSlug = /^\/generative\/slug\/([a-z0-9][a-z0-9-]*)\/?$/.exec(url.pathname);
+  if (generativeSlug) {
+    return { kind: 'fxhash-project', slug: generativeSlug[1] };
+  }
   return null;
 }

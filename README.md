@@ -11,6 +11,11 @@ token information:
 - contract address
 - token id
 
+`resolveTokenInfo` returns one token coordinate for token URLs or collection
+pages where a representative token can be selected. `resolveTokenInfos` returns
+an array of token coordinates for collection-like inputs when a keyless static
+DOM, caller-provided rendered DOM, or public API path exposes multiple tokens.
+
 It intentionally keeps secrets, API keys, playlist construction, DP-1 signing,
 and marketplace orchestration outside the package. Those belong in callers or
 server wrappers.
@@ -30,6 +35,24 @@ The parser currently recognizes:
 - Raster
 - raw `ethereum:{contract}:{tokenId}` and `tezos:{contract}:{tokenId}` inputs
 - Ethereum and Tezos wallet addresses for caller-side catalog lookup
+
+Collection-array resolution is supported where the source exposes keyless token
+data:
+
+- Objkt collection pages through caller-provided rendered HTML.
+- Art Blocks collection pages through static Flight token metadata or rendered
+  token cards.
+- fxhash project pages through the public GraphQL API.
+- Feral File show and series pages through public Feral File APIs.
+- OpenSea collection pages through embedded item JSON or rendered item cards.
+- SuperRare collection pages through static RSC token records or rendered
+  artwork cards.
+- Verse series pages through caller-provided rendered HTML.
+- Raster artwork collection pages through Raster's public kit API or rendered
+  token cards.
+
+Neort playlist pages expose off-chain art IDs rather than token coordinates, so
+they remain outside `resolveTokenInfos`.
 
 ## Validation Utilities
 

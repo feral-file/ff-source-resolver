@@ -42,7 +42,7 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
     expectedCoords: {
       chain: 'ethereum',
       contract: '0xed5af388653567af2f388e6224dc7c4b3241c544',
-      tokenId: '765',
+      tokenId: '519',
     },
   },
   {

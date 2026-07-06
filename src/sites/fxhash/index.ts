@@ -1,5 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
-import { resolveFxhashFromApi } from './pages/api';
+import { resolveFxhashFromApi, resolveFxhashProjectFromApi } from './pages/api';
 import { parseFxhashGentk } from './pages/gentk';
 import { parseFxhashIteration } from './pages/iteration';
 import { parseFxhashProject } from './pages/project';
@@ -28,5 +28,8 @@ export const fxhashAdapter: SourceSiteAdapter = {
   },
   async resolveFromApi(_url, parsed, fetchImpl): Promise<ParsedFindInput | null> {
     return resolveFxhashFromApi(parsed, fetchImpl);
+  },
+  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+    return resolveFxhashProjectFromApi(parsed, fetchImpl);
   },
 };

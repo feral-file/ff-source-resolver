@@ -1,8 +1,13 @@
-import { normalizeParsedFindInput } from './helpers';
+import { normalizeParsedFindInput, normalizeParsedFindInputs } from './helpers';
 import { parseFindInput } from './parse';
 import { matchSite } from './site-utils';
 import { siteAdapters } from './sites';
-import type { ParsedFindInput, ResolveTokenInfoOptions, TokenInfoResolution } from './types';
+import type {
+  ParsedFindInput,
+  ResolveTokenInfoOptions,
+  TokenInfoResolution,
+  TokenInfosResolution,
+} from './types';
 
 /**
  * resolveTokenInfo resolves chain, contract address, and token id from an
@@ -65,6 +70,61 @@ export async function resolveTokenInfo(
   return {
     kind: 'not-found',
     reason: 'Could not extract token information from URL, static DOM, or rendered page.',
+  };
+}
+
+/**
+ * resolveTokenInfos resolves every token coordinate exposed by a source input.
+ * Token URLs return a one-item array; collection-like pages may use static DOM,
+ * caller-provided rendering, or keyless public APIs to return many tokens.
+ */
+export async function resolveTokenInfos(
+  input: string,
+  options: ResolveTokenInfoOptions = {}
+): Promise<TokenInfosResolution> {
+  const parsed = parseFindInput(input);
+  if (parsed?.kind === 'token') {
+    return { kind: 'tokens', method: 'url', source: parsed.source, coords: [parsed.coords] };
+  }
+
+  const url = parseUrl(input);
+  if (!url) {
+    return { kind: 'not-found', reason: 'Input is not a URL or raw token coordinate.' };
+  }
+  const site = matchSite(url, siteAdapters);
+  if (!site) {
+    return { kind: 'not-found', reason: 'No source adapter is registered for this site.' };
+  }
+
+  const fetched = await fetchStaticHtml(url, options.fetch);
+  const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
+  if (domTokens.length > 0) {
+    return { kind: 'tokens', method: 'dom', source: domTokens[0].source, coords: domTokens.map((t) => t.coords) };
+  }
+
+  if (options.renderer) {
+    const rendered = await options.renderer.render(url.toString());
+    const renderedTokens = rendered
+      ? normalizeTokenFindings(extractTokenFindings(site, url, rendered))
+      : [];
+    if (renderedTokens.length > 0) {
+      return {
+        kind: 'tokens',
+        method: 'headless',
+        source: renderedTokens[0].source,
+        coords: renderedTokens.map((t) => t.coords),
+      };
+    }
+  }
+
+  const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
+  if (apiTokens.length > 0) {
+    return { kind: 'tokens', method: 'api', source: apiTokens[0].source, coords: apiTokens.map((t) => t.coords) };
+  }
+
+  return {
+    kind: 'not-found',
+    reason: 'Could not extract token information from URL, static DOM, rendered page, or API.',
   };
 }
 
@@ -143,4 +203,57 @@ async function resolveApiParsed(
   } catch {
     return null;
   }
+}
+
+function extractTokenFindings(
+  site: NonNullable<ReturnType<typeof matchSite>>,
+  url: URL,
+  html: string
+): readonly ParsedFindInput[] {
+  const results: ParsedFindInput[] = [];
+  if (site.extractTokensFromHtml) {
+    results.push(...site.extractTokensFromHtml(url, html));
+  }
+  if (site.extractFromHtml) {
+    const result = site.extractFromHtml(url, html);
+    if (result) {
+      results.push(result);
+    }
+  }
+  return results;
+}
+
+function normalizeTokenFindings(
+  results: readonly ParsedFindInput[]
+): Array<Extract<ParsedFindInput, { kind: 'token' }>> {
+  return normalizeParsedFindInputs(results).filter(
+    (result): result is Extract<ParsedFindInput, { kind: 'token' }> => result.kind === 'token'
+  );
+}
+
+async function resolveApiParsedMany(
+  site: NonNullable<ReturnType<typeof matchSite>>,
+  url: URL,
+  parsed: ParsedFindInput | null,
+  fetchImpl: typeof fetch | undefined
+): Promise<readonly ParsedFindInput[]> {
+  const doFetch = fetchImpl ?? globalThis.fetch;
+  if (!doFetch) {
+    return [];
+  }
+  try {
+    if (site.resolveTokensFromApi) {
+      const results = await site.resolveTokensFromApi(url, parsed, doFetch);
+      if (results.length > 0) {
+        return results;
+      }
+    }
+    if (site.resolveFromApi) {
+      const result = await site.resolveFromApi(url, parsed, doFetch);
+      return result ? [result] : [];
+    }
+  } catch {
+    return [];
+  }
+  return [];
 }
