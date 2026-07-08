@@ -1,4 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import { resolveObjktCollectionFromApi } from './pages/api';
 import { parseObjktCollection } from './pages/collection';
 import {
   extractObjktCollectionTokensFromHtml,
@@ -26,5 +27,8 @@ export const objktAdapter: SourceSiteAdapter = {
   },
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractObjktCollectionTokensFromHtml(url, html);
+  },
+  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+    return resolveObjktCollectionFromApi(parsed, fetchImpl);
   },
 };

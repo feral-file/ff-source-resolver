@@ -727,6 +727,44 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('Objkt collection resolves all tokens through the public GraphQL API', async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const result = await resolveTokenInfos('https://objkt.com/collections/objkt-paint-98', {
+      fetch: objktCollectionApiFetch(requests) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '913' },
+    ]);
+    assert.equal(requests.length, 3);
+    assert.equal(requests[1].url, 'https://data.objkt.com/v3/graphql');
+  });
+
+  test('Objkt collection contract URL resolves through the public GraphQL API', async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const result = await resolveTokenInfos(
+      'https://objkt.com/collections/KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
+      { fetch: objktCollectionApiFetch(requests) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '913' },
+    ]);
+    assert.match(JSON.stringify(requests[1].body), /KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd/);
+  });
+
   test('Art Blocks collection extracts static tokens_metadata records into an array', async () => {
     const html = [
       artBlocksMetadataToken(ETH_CONTRACT, '255000641'),
@@ -818,10 +856,41 @@ describe('resolveTokenInfos collection support', () => {
     if (result.kind !== 'tokens') {
       throw new Error('narrowing');
     }
+    assert.equal(result.method, 'dom');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '15' },
     ]);
+  });
+
+  test('OpenSea collection does not call the authenticated collection NFTs API', async () => {
+    const html = openSeaCollectionItems(openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97'));
+    const calledUrls: string[] = [];
+    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString();
+      calledUrls.push(url);
+      if (url.startsWith('https://api.opensea.io/')) {
+        throw new Error('OpenSea API requires x-api-key and must not be called by keyless resolution');
+      }
+      return new Response(html, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    };
+
+    const result = await resolveTokenInfos('https://opensea.io/collection/a-eye-after-johannes-itten', {
+      fetch: fetchImpl as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
+    ]);
+    assert.deepEqual(calledUrls, ['https://opensea.io/collection/a-eye-after-johannes-itten']);
   });
 
   test('SuperRare collection extracts static escaped token records', async () => {
@@ -844,6 +913,50 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('SuperRare collection prefers paginated public API tokens over partial DOM records', async () => {
+    const contract = '0x3e930455dcbf4bc69de9926bdaf8ef782398786f';
+    const html =
+      'tokenId\\":1,\\"contractAddress\\":\\"0x3e930455dcbf4bc69de9926bdaf8ef782398786f\\",\\"chainId\\":\\"1\\"';
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const result = await resolveTokenInfos(`https://superrare.com/collection/${contract}`, {
+      fetch: superRareCollectionApiFetch(html, requests, [
+        {
+          nfts: [
+            { chainId: '1', contractAddress: contract, tokenId: 1 },
+            { chainId: '1', contractAddress: contract, tokenId: 2 },
+          ],
+          hasNextPage: true,
+        },
+        {
+          nfts: [
+            { chainId: '1', contractAddress: contract, tokenId: 3 },
+            { chainId: '137', contractAddress: contract, tokenId: 4 },
+          ],
+          hasNextPage: false,
+        },
+      ]) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract, tokenId: '1' },
+      { chain: 'ethereum', contract, tokenId: '2' },
+      { chain: 'ethereum', contract, tokenId: '3' },
+    ]);
+    assert.deepEqual(
+      requests.map((request) => request.url),
+      [
+        `https://superrare.com/collection/${contract}`,
+        'https://api.superrare.com/graphql',
+        'https://api.superrare.com/graphql',
+      ]
+    );
+  });
+
   test('Verse series extracts rendered item card tokens into an array', async () => {
     const html = [verseItemCard(ETH_CONTRACT, '216'), verseItemCard(ETH_CONTRACT, '178')].join('');
     const result = await resolveTokenInfos('https://verse.works/series/example-series', {
@@ -859,6 +972,22 @@ describe('resolveTokenInfos collection support', () => {
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '216' },
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '178' },
+    ]);
+  });
+
+  test('Verse series resolves all editions through the public GraphQL API', async () => {
+    const result = await resolveTokenInfos('https://verse.works/series/quantizer-by-harm-van-den-dorpel', {
+      fetch: verseSeriesApiFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: '0x23b72f7458a204446983f544d655df10f70533e9', tokenId: '167' },
+      { chain: 'ethereum', contract: '0x23b72f7458a204446983f544d655df10f70533e9', tokenId: '0' },
     ]);
   });
 
@@ -1637,6 +1766,80 @@ function objktSocialImageMeta(contract: string, tokenId: string): string {
 }
 
 /**
+ * objktCollectionApiFetch mocks Objkt's static collection page fetch followed
+ * by collection lookup and paginated token GraphQL calls.
+ */
+function objktCollectionApiFetch(requests: Array<{ url: string; body: unknown }>): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    let body: unknown = null;
+    if (typeof init?.body === 'string') {
+      body = JSON.parse(init.body);
+    }
+    requests.push({ url, body });
+
+    if (url.startsWith('https://objkt.com/collections/')) {
+      return new Response('<html>client shell only</html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+
+    if (url !== 'https://data.objkt.com/v3/graphql') {
+      return new Response('not found', { status: 404 });
+    }
+
+    const bodyText = JSON.stringify(body);
+    if (bodyText.includes('ResolveObjktCollectionTokens') && bodyText.includes('"lastPk":0')) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            token: [
+              {
+                pk: 50,
+                fa_contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
+                token_id: '914',
+              },
+              {
+                pk: 60,
+                fa_contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
+                token_id: '913',
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (bodyText.includes('ResolveObjktCollectionTokens')) {
+      return new Response(JSON.stringify({ data: { token: [] } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (bodyText.includes('ResolveObjktCollection')) {
+      return new Response(
+        JSON.stringify({
+          data: {
+            fa: [
+              {
+                contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
+                path: 'objkt-paint-98',
+                collection_id: 'objkt-paint-98',
+              },
+            ],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+    return new Response(JSON.stringify({ data: {} }), { status: 200 });
+  }) as typeof fetch;
+}
+
+/**
  * artBlocksCard returns the repeated rendered card/link shape used by Art
  * Blocks collection pages for token thumbnails.
  */
@@ -1662,6 +1865,57 @@ function verseItemCard(contract: string, tokenId: string): string {
     `Quantizer ${tokenId}</a>` +
     '</figcaption></figure></div>'
   );
+}
+
+function verseSeriesApiFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://verse.works/query') {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      assert.equal(body.variables?.slug, 'quantizer-by-harm-van-den-dorpel');
+      return Response.json({
+        data: {
+          collectionsPage: {
+            nodes: [
+              {
+                artworks: [
+                  {
+                    editions: [
+                      {
+                        tokenId: '167',
+                        contractInfo: {
+                          chain: 'ETHEREUM',
+                          contractAddress: '0x23b72f7458a204446983f544d655df10f70533e9',
+                        },
+                      },
+                      {
+                        tokenId: '0',
+                        contractInfo: {
+                          chain: 'ETHEREUM',
+                          contractAddress: '0x23b72f7458a204446983f544d655df10f70533e9',
+                        },
+                      },
+                      {
+                        tokenId: '1',
+                        contractInfo: {
+                          chain: 'TEZOS',
+                          contractAddress: TEZOS_CONTRACT,
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      });
+    }
+    return new Response('<html>client shell only</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
 }
 
 /**
@@ -1737,6 +1991,63 @@ function superRareCollectionHtml(cards: string): string {
       </div>
     </main>
   `;
+}
+
+function superRareCollectionApiFetch(
+  html: string,
+  requests: Array<{ url: string; body: unknown }>,
+  pages: Array<{
+    nfts: Array<{ chainId: string; contractAddress: string; tokenId: string | number }>;
+    hasNextPage: boolean;
+  }>
+): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    let body: unknown = null;
+    if (typeof init?.body === 'string') {
+      body = JSON.parse(init.body);
+    }
+    requests.push({ url, body });
+
+    if (url.startsWith('https://superrare.com/collection/')) {
+      return new Response(html, {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
+
+    if (url !== 'https://api.superrare.com/graphql') {
+      return new Response('not found', { status: 404 });
+    }
+
+    const variables = (body as { variables?: Record<string, unknown> } | null)?.variables;
+    assert.deepEqual(variables?.filter, {
+      contractAddress: { equals: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f' },
+    });
+    assert.equal(
+      (variables?.nftPagination as { take?: number; sortBy?: string; order?: string } | undefined)?.take,
+      100
+    );
+    assert.equal(
+      (variables?.nftPagination as { take?: number; sortBy?: string; order?: string } | undefined)?.sortBy,
+      'createdAt'
+    );
+    assert.equal(
+      (variables?.nftPagination as { take?: number; sortBy?: string; order?: string } | undefined)?.order,
+      'asc'
+    );
+
+    const skip = (variables?.nftPagination as { skip?: number } | undefined)?.skip ?? 0;
+    const page = pages[skip / 100] ?? { nfts: [], hasNextPage: false };
+    return Response.json({
+      data: {
+        getNfts: {
+          nfts: page.nfts,
+          pagination: { hasNextPage: page.hasNextPage },
+        },
+      },
+    });
+  };
 }
 
 function artBlocksMetadataToken(contract: string, tokenId: string): string {

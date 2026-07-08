@@ -39,15 +39,17 @@ The parser currently recognizes:
 Collection-array resolution is supported where the source exposes keyless token
 data:
 
-- Objkt collection pages through caller-provided rendered HTML.
+- Objkt collection pages through the public Objkt GraphQL API after resolving
+  the collection slug, id, or KT1 contract.
 - Art Blocks collection pages through the public Art Blocks GraphQL API after
   deriving the collection project id from the page.
 - fxhash project pages through the public GraphQL API.
 - Feral File show and series pages through public Feral File APIs.
-- OpenSea collection pages through embedded item JSON or rendered item cards.
-- SuperRare collection pages through static RSC token records or rendered
-  artwork cards.
-- Verse series pages through caller-provided rendered HTML.
+- OpenSea collection pages through embedded item JSON or rendered item cards;
+  the documented full collection API requires an API key, so it stays outside
+  this keyless package.
+- SuperRare collection pages through the public SuperRare GraphQL API.
+- Verse series pages through the public Verse GraphQL API.
 - Raster artwork collection pages through Raster's public kit API or rendered
   token cards.
 
