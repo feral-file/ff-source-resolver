@@ -608,6 +608,20 @@ describe('resolveTokenInfo fallback order', () => {
     });
   });
 
+  test('parsed token URLs use page title metadata when available', async () => {
+    const result = await resolveTokenInfos(`https://www.artblocks.io/token/${ETH_CONTRACT}-5001410`, {
+      fetch: htmlFetch('<html><head><title>Gazers #249 by Matt Kane | Art Blocks</title></head></html>') as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'url');
+    assert.equal(result.title, 'Gazers #249 by Matt Kane | Art Blocks');
+    assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
+  });
+
   test('optional headless renderer runs after static DOM lookup misses', async () => {
     const fetchImpl = async (): Promise<Response> =>
       new Response('<html>client shell only</html>', {
@@ -701,6 +715,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'url');
+    assert.equal(result.title, 'Ethereum 0xabab...8070 #5001410');
     assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
   });
 
@@ -738,6 +753,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Objkt Paint Collection');
     assert.deepEqual(result.coords, [
       { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
       { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '913' },
@@ -857,6 +873,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'dom');
+    assert.equal(result.title, 'A Eye After Johannes Itten');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '15' },
@@ -1034,6 +1051,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'The Fable');
     assert.deepEqual(result.coords, [
       { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1565369' },
       { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1597012' },
@@ -1828,6 +1846,7 @@ function objktCollectionApiFetch(requests: Array<{ url: string; body: unknown }>
                 contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
                 path: 'objkt-paint-98',
                 collection_id: 'objkt-paint-98',
+                name: 'Objkt Paint Collection',
               },
             ],
           },
@@ -2097,6 +2116,7 @@ function fxhashProjectFetch(): (input: string | URL | Request, init?: RequestIni
       return Response.json({
         data: {
           generativeToken: {
+            name: 'The Fable',
             entireCollection: [
               {
                 onChainId: 1565369,
