@@ -1,4 +1,4 @@
-import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
 import { resolveArtBlocksCollectionFromApi } from './pages/api';
 import { parseArtBlocksCollection } from './pages/collection';
 import { extractArtBlocksTokenFromHtml, extractArtBlocksTokensFromHtml } from './pages/html';
@@ -30,7 +30,7 @@ export const artBlocksAdapter: SourceSiteAdapter = {
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractArtBlocksTokensFromHtml(url, html);
   },
-  async resolveTokensFromApi(url, parsed, fetchImpl, context): Promise<readonly ParsedFindInput[]> {
+  async resolveTokensFromApi(url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveArtBlocksCollectionFromApi(url, parsed, fetchImpl, context);
   },
 };

@@ -1,4 +1,4 @@
-import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
 import { parseVerseItem } from './pages/item';
 import {
   extractVerseSeriesTokenFromHtml,
@@ -36,7 +36,7 @@ export const verseAdapter: SourceSiteAdapter = {
     }
     return extractVerseSeriesTokensFromHtml(html);
   },
-  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {
     return resolveVerseSeriesFromApi(parsed, fetchImpl);
   },
 };

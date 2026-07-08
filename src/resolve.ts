@@ -5,6 +5,7 @@ import { siteAdapters } from './sites';
 import type {
   ParsedFindInput,
   ResolveTokenInfoOptions,
+  SingleTokenFindingsResult,
   TokenInfoResolution,
   TokenFindingsResult,
   TokenInfosResolution,
@@ -85,13 +86,12 @@ export async function resolveTokenInfos(
 ): Promise<TokenInfosResolution> {
   const parsed = parseFindInput(input);
   if (parsed?.kind === 'token') {
-    const title = await titleForParsedTokenInput(input, parsed, options.fetch);
     return {
       kind: 'tokens',
       method: 'url',
       source: parsed.source,
       coords: [parsed.coords],
-      ...(title ? { title } : {}),
+      title: titleForParsedInput(parsed, null),
     };
   }
 
@@ -110,9 +110,9 @@ export async function resolveTokenInfos(
     const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched);
     const apiTokens = normalizeTokenFindings(apiFindings.findings);
     if (apiTokens.length > 0) {
-      return tokensResolution('api', apiTokens, apiFindings.title ?? titleForParsedInput(parsed, fetched));
+      return tokensResolution('api', apiTokens, bestFetchedTitle(site, url, parsed, fetched, apiFindings.title));
     }
-    return tokensResolution('dom', domTokens, titleForParsedInput(parsed, fetched));
+    return tokensResolution('dom', domTokens, bestFetchedTitle(site, url, parsed, fetched));
   }
 
   if (options.renderer) {
@@ -133,17 +133,17 @@ export async function resolveTokenInfos(
         return tokensResolution(
           'api',
           apiTokens,
-          apiFindings.title ?? titleForParsedInput(parsed, rendered ?? fetched)
+          bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null, apiFindings.title)
         );
       }
-      return tokensResolution('headless', renderedTokens, titleForParsedInput(parsed, rendered ?? fetched));
+      return tokensResolution('headless', renderedTokens, bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null));
     }
   }
 
   const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched);
   const apiTokens = normalizeTokenFindings(apiFindings.findings);
   if (apiTokens.length > 0) {
-    return tokensResolution('api', apiTokens, apiFindings.title ?? titleForParsedInput(parsed, fetched));
+    return tokensResolution('api', apiTokens, bestFetchedTitle(site, url, parsed, fetched, apiFindings.title));
   }
 
   return {
@@ -164,19 +164,6 @@ function tokensResolution(
     coords: tokens.map((t) => t.coords),
     ...(title ? { title } : {}),
   };
-}
-
-async function titleForParsedTokenInput(
-  input: string,
-  parsed: Extract<ParsedFindInput, { kind: 'token' }>,
-  fetchImpl: typeof fetch | undefined
-): Promise<string | undefined> {
-  const url = parseUrl(input);
-  if (!url) {
-    return titleForParsedInput(parsed, null);
-  }
-  const html = await fetchStaticHtml(url, fetchImpl);
-  return titleForParsedInput(parsed, html);
 }
 
 /**
@@ -250,7 +237,8 @@ async function resolveApiParsed(
     return null;
   }
   try {
-    return normalizeParsedFindInput(await site.resolveFromApi(url, parsed, doFetch));
+    const result = normalizeSingleTokenFindingsResult(await site.resolveFromApi(url, parsed, doFetch));
+    return normalizeParsedFindInput(result.finding);
   } catch {
     return null;
   }
@@ -303,8 +291,11 @@ async function resolveApiParsedMany(
       }
     }
     if (site.resolveFromApi) {
-      const result = await site.resolveFromApi(url, parsed, doFetch);
-      return { findings: result ? [result] : [] };
+      const result = normalizeSingleTokenFindingsResult(await site.resolveFromApi(url, parsed, doFetch));
+      return {
+        findings: result.finding ? [result.finding] : [],
+        ...(result.title ? { title: result.title } : {}),
+      };
     }
   } catch {
     return { findings: [] };
@@ -319,6 +310,43 @@ function normalizeTokenFindingsResult(result: TokenFindingsResult): {
   return 'findings' in result
     ? { findings: result.findings, ...(result.title ? { title: result.title } : {}) }
     : { findings: result };
+}
+
+function normalizeSingleTokenFindingsResult(result: SingleTokenFindingsResult): {
+  finding: ParsedFindInput | null;
+  title?: string;
+} {
+  return result && 'finding' in result
+    ? { finding: result.finding, ...(result.title ? { title: result.title } : {}) }
+    : { finding: result };
+}
+
+function bestFetchedTitle(
+  site: NonNullable<ReturnType<typeof matchSite>>,
+  url: URL,
+  parsed: ParsedFindInput | null,
+  html: string | null,
+  apiTitle?: string
+): string | undefined {
+  return (
+    normalizeTitle(apiTitle) ??
+    (html ? fetchedHtmlTitle(site, url, parsed, html) : null) ??
+    titleForParsedInput(parsed, null)
+  );
+}
+
+function fetchedHtmlTitle(
+  site: NonNullable<ReturnType<typeof matchSite>>,
+  url: URL,
+  parsed: ParsedFindInput | null,
+  html: string
+): string | null {
+  const adapterTitle = normalizeTitle(site.extractTitleFromHtml?.(url, html, parsed) ?? undefined);
+  if (adapterTitle) {
+    return adapterTitle;
+  }
+  const htmlTitle = extractHtmlTitle(html);
+  return htmlTitle ? normalizeMarketplaceTitle(htmlTitle, site.source) : null;
 }
 
 function titleForParsedInput(parsed: ParsedFindInput | null, html: string | null): string | undefined {
@@ -351,6 +379,28 @@ function extractHtmlTitle(html: string): string | null {
     metaContent(html, 'name', 'title');
   const title = metaTitle ?? /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
   return normalizeTitle(title);
+}
+
+function normalizeMarketplaceTitle(title: string, source: string): string | null {
+  const siteNames: Record<string, readonly string[]> = {
+    artblocks: ['Art Blocks'],
+    objkt: ['Objkt', 'objkt.com'],
+    fxhash: ['fxhash'],
+    feralfile: ['Feral File'],
+    opensea: ['OpenSea'],
+    superrare: ['SuperRare'],
+    verse: ['Verse'],
+    raster: ['Raster'],
+    neort: ['NEORT', 'Neort'],
+  };
+  let normalized = title;
+  for (const siteName of siteNames[source] ?? []) {
+    normalized = normalized.replace(new RegExp(`\\s*[|–-]\\s*${escapeRegex(siteName)}\\s*$`, 'i'), '');
+    if (normalized.trim().toLowerCase() === siteName.toLowerCase()) {
+      return null;
+    }
+  }
+  return normalizeTitle(normalized);
 }
 
 function metaContent(html: string, attrName: string, attrValue: string): string | null {
