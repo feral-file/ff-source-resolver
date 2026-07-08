@@ -28,7 +28,7 @@ export const objktAdapter: SourceSiteAdapter = {
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractObjktCollectionTokensFromHtml(url, html);
   },
-  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {
-    return resolveObjktCollectionFromApi(parsed, fetchImpl);
+  async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
+    return resolveObjktCollectionFromApi(parsed, fetchImpl, context);
   },
 };

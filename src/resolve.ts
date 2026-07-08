@@ -5,8 +5,10 @@ import { siteAdapters } from './sites';
 import type {
   ParsedFindInput,
   ResolveTokenInfoOptions,
+  ResolveTokenInfosOptions,
   SingleTokenFindingsResult,
   TokenInfoResolution,
+  TokenInfoResolutionMethod,
   TokenFindingsResult,
   TokenInfosResolution,
 } from './types';
@@ -82,8 +84,9 @@ export async function resolveTokenInfo(
  */
 export async function resolveTokenInfos(
   input: string,
-  options: ResolveTokenInfoOptions = {}
+  options: ResolveTokenInfosOptions = {}
 ): Promise<TokenInfosResolution> {
+  const limit = normalizeResolveTokenInfosLimit(options.limit);
   const parsed = parseFindInput(input);
   if (parsed?.kind === 'token') {
     return {
@@ -107,12 +110,18 @@ export async function resolveTokenInfos(
   const fetched = await fetchStaticHtml(url, options.fetch);
   const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
   if (domTokens.length > 0) {
-    const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched);
+    const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched, limit);
     const apiTokens = normalizeTokenFindings(apiFindings.findings);
     if (apiTokens.length > 0) {
-      return tokensResolution('api', apiTokens, bestFetchedTitle(site, url, parsed, fetched, apiFindings.title));
+      return tokensResolution(
+        'api',
+        apiTokens,
+        bestFetchedTitle(site, url, parsed, fetched, apiFindings.title),
+        limit,
+        apiFindings.hasMore
+      );
     }
-    return tokensResolution('dom', domTokens, bestFetchedTitle(site, url, parsed, fetched));
+    return tokensResolution('dom', domTokens, bestFetchedTitle(site, url, parsed, fetched), limit);
   }
 
   if (options.renderer) {
@@ -126,24 +135,38 @@ export async function resolveTokenInfos(
         url,
         parsed,
         options.fetch,
-        rendered ?? fetched
+        rendered ?? fetched,
+        limit
       );
       const apiTokens = normalizeTokenFindings(apiFindings.findings);
       if (apiTokens.length > 0) {
         return tokensResolution(
           'api',
           apiTokens,
-          bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null, apiFindings.title)
+          bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null, apiFindings.title),
+          limit,
+          apiFindings.hasMore
         );
       }
-      return tokensResolution('headless', renderedTokens, bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null));
+      return tokensResolution(
+        'headless',
+        renderedTokens,
+        bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null),
+        limit
+      );
     }
   }
 
-  const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched);
+  const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched, limit);
   const apiTokens = normalizeTokenFindings(apiFindings.findings);
   if (apiTokens.length > 0) {
-    return tokensResolution('api', apiTokens, bestFetchedTitle(site, url, parsed, fetched, apiFindings.title));
+    return tokensResolution(
+      'api',
+      apiTokens,
+      bestFetchedTitle(site, url, parsed, fetched, apiFindings.title),
+      limit,
+      apiFindings.hasMore
+    );
   }
 
   return {
@@ -153,17 +176,38 @@ export async function resolveTokenInfos(
 }
 
 function tokensResolution(
-  method: 'dom' | 'headless' | 'api',
+  method: TokenInfoResolutionMethod,
   tokens: Array<Extract<ParsedFindInput, { kind: 'token' }>>,
-  title?: string
+  title?: string,
+  limit?: number,
+  sourceHasMore = false
 ): TokenInfosResolution {
+  const limited = limit == null ? tokens : tokens.slice(0, limit);
+  const hasMore = sourceHasMore || (limit != null && tokens.length > limit);
   return {
     kind: 'tokens',
     method,
-    source: tokens[0].source,
-    coords: tokens.map((t) => t.coords),
+    source: limited[0].source,
+    coords: limited.map((t) => t.coords),
     ...(title ? { title } : {}),
+    ...(hasMore ? { hasMore } : {}),
   };
+}
+
+/**
+ * normalizeResolveTokenInfosLimit validates limit once at the public boundary
+ * so site adapters can trust it when sizing API pages. A positive integer
+ * keeps the result contract unambiguous: token URLs always return their one
+ * coordinate, and collection calls return between one and limit coordinates.
+ */
+function normalizeResolveTokenInfosLimit(limit: number | undefined): number | undefined {
+  if (limit == null) {
+    return undefined;
+  }
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new TypeError(`resolveTokenInfos limit must be a positive integer, got ${limit}.`);
+  }
+  return limit;
 }
 
 /**
@@ -275,8 +319,9 @@ async function resolveApiParsedMany(
   url: URL,
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch | undefined,
-  html?: string | null
-): Promise<{ findings: readonly ParsedFindInput[]; title?: string }> {
+  html?: string | null,
+  limit?: number
+): Promise<{ findings: readonly ParsedFindInput[]; title?: string; hasMore?: boolean }> {
   const doFetch = fetchImpl ?? globalThis.fetch;
   if (!doFetch) {
     return { findings: [] };
@@ -284,7 +329,7 @@ async function resolveApiParsedMany(
   try {
     if (site.resolveTokensFromApi) {
       const result = normalizeTokenFindingsResult(
-        await site.resolveTokensFromApi(url, parsed, doFetch, { html })
+        await site.resolveTokensFromApi(url, parsed, doFetch, { html, limit })
       );
       if (result.findings.length > 0) {
         return result;
@@ -306,9 +351,14 @@ async function resolveApiParsedMany(
 function normalizeTokenFindingsResult(result: TokenFindingsResult): {
   findings: readonly ParsedFindInput[];
   title?: string;
+  hasMore?: boolean;
 } {
   return 'findings' in result
-    ? { findings: result.findings, ...(result.title ? { title: result.title } : {}) }
+    ? {
+        findings: result.findings,
+        ...(result.title ? { title: result.title } : {}),
+        ...(result.hasMore ? { hasMore: result.hasMore } : {}),
+      }
     : { findings: result };
 }
 

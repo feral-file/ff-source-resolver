@@ -1,4 +1,5 @@
 import { sourceTokenResult } from '../../../helpers';
+import { limitTokenFindings, tokenLimitTarget } from '../../../limits';
 import type { ParsedFindInput, ResolveTokensFromApiContext, TokenFindingsResult } from '../../../types';
 
 const ART_BLOCKS_GRAPHQL_ENDPOINT = 'https://data.artblocks.io/v1/graphql';
@@ -82,8 +83,15 @@ export async function resolveArtBlocksCollectionFromApi(
 
   const results: ParsedFindInput[] = [];
   let firstApiToken: ArtBlocksApiToken | null = null;
+  let hasMore = false;
+  let offset = 0;
+  const targetCount = tokenLimitTarget(context?.limit);
   for (let pageNumber = 0; pageNumber < ART_BLOCKS_API_MAX_PAGES; pageNumber += 1) {
-    const tokens = await fetchArtBlocksProjectTokensPage(fetchImpl, projectId, pageNumber * ART_BLOCKS_API_PAGE_SIZE);
+    const pageLimit =
+      targetCount == null
+        ? ART_BLOCKS_API_PAGE_SIZE
+        : Math.min(ART_BLOCKS_API_PAGE_SIZE, Math.max(1, targetCount - results.length));
+    const tokens = await fetchArtBlocksProjectTokensPage(fetchImpl, projectId, offset, pageLimit);
     if (tokens.length === 0) {
       break;
     }
@@ -92,14 +100,23 @@ export async function resolveArtBlocksCollectionFromApi(
       const result = artBlocksApiToken(token);
       if (result) {
         results.push(result);
+        if (targetCount != null && results.length >= targetCount) {
+          hasMore = true;
+          break;
+        }
       }
     }
-    if (tokens.length < ART_BLOCKS_API_PAGE_SIZE) {
+    if (hasMore || tokens.length < pageLimit) {
       break;
     }
+    offset += tokens.length;
   }
   const title = artBlocksTitle(firstApiToken, results.length);
-  return { findings: results, ...(title ? { title } : {}) };
+  return {
+    findings: limitTokenFindings(results, context?.limit),
+    ...(title ? { title } : {}),
+    ...(hasMore ? { hasMore } : {}),
+  };
 }
 
 async function fetchArtBlocksCollectionPageHtml(
@@ -116,7 +133,8 @@ async function fetchArtBlocksCollectionPageHtml(
 async function fetchArtBlocksProjectTokensPage(
   fetchImpl: typeof fetch,
   projectId: string,
-  offset: number
+  offset: number,
+  limit: number
 ): Promise<Array<ArtBlocksApiToken | null>> {
   const response = await fetchImpl(ART_BLOCKS_GRAPHQL_ENDPOINT, {
     method: 'POST',
@@ -127,7 +145,7 @@ async function fetchArtBlocksProjectTokensPage(
     body: JSON.stringify({
       query: PROJECT_TOKENS_QUERY,
       variables: {
-        limit: ART_BLOCKS_API_PAGE_SIZE,
+        limit,
         offset,
         where: { project_id: { _eq: projectId }, chain_id: { _eq: 1 } },
         orderBy: [{ invocation: 'asc' }],

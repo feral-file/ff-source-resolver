@@ -1,5 +1,11 @@
-import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import type {
+  ParsedFindInput,
+  ResolveTokensFromApiContext,
+  SourceSiteAdapter,
+  TokenFindingsResult,
+} from '../../types';
 import { sourceTokenResult } from '../../helpers';
+import { limitTokenFindings, tokenLimitTarget } from '../../limits';
 import {
   extractRasterArtworkTokenFromHtml,
   extractRasterArtworkTokensFromHtml,
@@ -36,8 +42,8 @@ export const rasterAdapter: SourceSiteAdapter = {
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractRasterArtworkTokensFromHtml(url, html);
   },
-  async resolveTokensFromApi(url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
-    return resolveRasterArtworkTokensFromApi(url, parsed, fetchImpl);
+  async resolveTokensFromApi(url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
+    return resolveRasterArtworkTokensFromApi(url, parsed, fetchImpl, context);
   },
 };
 
@@ -53,28 +59,37 @@ interface RasterTokenPage {
 async function resolveRasterArtworkTokensFromApi(
   url: URL,
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch
-): Promise<ParsedFindInput[]> {
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
+): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'raster-artwork') {
-    return [];
+    return { findings: [] };
   }
-  const page = await fetchImpl(url.toString(), {
-    headers: RASTER_PAGE_HEADERS,
-  });
-  if (!page.ok) {
-    return [];
+  let html = context?.html ?? null;
+  if (!html) {
+    const page = await fetchImpl(url.toString(), {
+      headers: RASTER_PAGE_HEADERS,
+    });
+    if (!page.ok) {
+      return { findings: [] };
+    }
+    html = await page.text();
   }
-  const artworkId = extractRasterArtworkId(await page.text());
+  const artworkId = extractRasterArtworkId(html);
   if (!artworkId) {
-    return [];
+    return { findings: [] };
   }
 
   const results: ParsedFindInput[] = [];
   let cursor = '0';
+  let hasMore = false;
+  const targetCount = tokenLimitTarget(context?.limit);
   for (let pageCount = 0; pageCount < 20; pageCount += 1) {
+    const pageLimit =
+      targetCount == null ? 100 : Math.min(100, Math.max(1, targetCount - results.length));
     const apiUrl = new URL(`/artwork/${artworkId}/tokens`, 'https://kit.raster.art');
     apiUrl.searchParams.set('cursor', cursor);
-    apiUrl.searchParams.set('page_size', '100');
+    apiUrl.searchParams.set('page_size', String(pageLimit));
     apiUrl.searchParams.set('sort', 'listing');
     apiUrl.searchParams.set('sort_direction', 'asc');
 
@@ -91,7 +106,14 @@ async function resolveRasterArtworkTokensFromApi(
       const result = rasterApiToken(token);
       if (result) {
         results.push(result);
+        if (targetCount != null && results.length >= targetCount) {
+          hasMore = true;
+          break;
+        }
       }
+    }
+    if (hasMore) {
+      break;
     }
     const nextCursor = body?.cursor == null ? '' : String(body.cursor);
     if (!nextCursor || nextCursor === cursor) {
@@ -99,7 +121,10 @@ async function resolveRasterArtworkTokensFromApi(
     }
     cursor = nextCursor;
   }
-  return results;
+  return {
+    findings: limitTokenFindings(results, context?.limit),
+    ...(hasMore ? { hasMore } : {}),
+  };
 }
 
 function extractRasterArtworkId(html: string): string | null {
