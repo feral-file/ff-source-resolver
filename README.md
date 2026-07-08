@@ -15,6 +15,9 @@ token information:
 pages where a representative token can be selected. `resolveTokenInfos` returns
 an array of token coordinates for collection-like inputs when a keyless static
 DOM, caller-provided rendered DOM, or public API path exposes multiple tokens.
+Callers can pass `{ limit: number }` to bound collection resolution; token
+results include `hasMore: true` when the source exposed additional usable token
+coordinates beyond the returned limit.
 
 It intentionally keeps secrets, API keys, playlist construction, DP-1 signing,
 and marketplace orchestration outside the package. Those belong in callers or

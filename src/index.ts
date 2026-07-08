@@ -16,6 +16,7 @@ export type {
   MarketplaceSource,
   ParsedFindInput,
   ResolveTokenInfoOptions,
+  ResolveTokenInfosOptions,
   SourceSiteAdapter,
   TokenCoords,
   TokenFindingsResult,

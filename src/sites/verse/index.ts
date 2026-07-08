@@ -36,7 +36,7 @@ export const verseAdapter: SourceSiteAdapter = {
     }
     return extractVerseSeriesTokensFromHtml(html);
   },
-  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {
-    return resolveVerseSeriesFromApi(parsed, fetchImpl);
+  async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
+    return resolveVerseSeriesFromApi(parsed, fetchImpl, context);
   },
 };

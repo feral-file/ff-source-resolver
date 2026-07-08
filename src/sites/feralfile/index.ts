@@ -1,5 +1,11 @@
-import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
+import type {
+  ParsedFindInput,
+  ResolveTokensFromApiContext,
+  SourceSiteAdapter,
+  TokenFindingsResult,
+} from '../../types';
 import { sourceTokenResult } from '../../helpers';
+import { limitTokenFindings, tokenLimitTarget } from '../../limits';
 import { parseFeralFileArtwork } from './pages/artwork';
 import { parseFeralFileSeries } from './pages/series';
 import { parseFeralFileShow } from './pages/show';
@@ -47,14 +53,15 @@ export const feralFileAdapter: SourceSiteAdapter = {
       }
     );
   },
-  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {
-    return resolveFeralFileTokensFromApi(parsed, fetchImpl);
+  async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
+    return resolveFeralFileTokensFromApi(parsed, fetchImpl, context);
   },
 };
 
 async function resolveFeralFileTokensFromApi(
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
 ): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'ff-url') {
     return { findings: [] };
@@ -69,15 +76,30 @@ async function resolveFeralFileTokensFromApi(
       return { findings: [] };
     }
     const results: ParsedFindInput[] = [];
+    let hasMore = false;
+    const targetCount = tokenLimitTarget(context?.limit);
     for (const seriesId of seriesIds) {
       const artworks = await fetchFeralFileApi<FeralFileArtwork[]>(
         `/api/artworks?seriesID=${encodeURIComponent(seriesId)}`,
         fetchImpl
       );
-      results.push(...feralFileArtworkTokens(artworks ?? []));
+      for (const token of feralFileArtworkTokens(artworks ?? [])) {
+        results.push(token);
+        if (targetCount != null && results.length >= targetCount) {
+          hasMore = true;
+          break;
+        }
+      }
+      if (hasMore) {
+        break;
+      }
     }
     const title = feralFileTitle(show);
-    return { findings: results, ...(title ? { title } : {}) };
+    return {
+      findings: limitTokenFindings(results, context?.limit),
+      ...(title ? { title } : {}),
+      ...(hasMore ? { hasMore } : {}),
+    };
   }
   if (parsed.urlKind === 'series') {
     const series = await fetchFeralFileApi<FeralFileSeries>(
@@ -91,8 +113,14 @@ async function resolveFeralFileTokensFromApi(
       `/api/artworks?seriesID=${encodeURIComponent(series.id)}`,
       fetchImpl
     );
+    const results = feralFileArtworkTokens(artworks ?? []);
+    const hasMore = context?.limit != null && results.length > context.limit;
     const title = feralFileTitle(series);
-    return { findings: feralFileArtworkTokens(artworks ?? []), ...(title ? { title } : {}) };
+    return {
+      findings: limitTokenFindings(results, context?.limit),
+      ...(title ? { title } : {}),
+      ...(hasMore ? { hasMore } : {}),
+    };
   }
   if (parsed.urlKind === 'artwork') {
     const artwork = await fetchFeralFileApi<FeralFileArtwork>(

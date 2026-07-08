@@ -1,5 +1,11 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput, SingleTokenFindingsResult, TokenFindingsResult } from '../../../types';
+import { limitTokenFindings, tokenLimitTarget } from '../../../limits';
+import type {
+  ParsedFindInput,
+  ResolveTokensFromApiContext,
+  SingleTokenFindingsResult,
+  TokenFindingsResult,
+} from '../../../types';
 
 const FXHASH_GRAPHQL_ENDPOINT = 'https://api.fxhash.xyz/graphql';
 
@@ -94,7 +100,8 @@ export async function resolveFxhashFromApi(
  */
 export async function resolveFxhashProjectFromApi(
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
 ): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'fxhash-project') {
     return { findings: [] };
@@ -119,6 +126,8 @@ export async function resolveFxhashProjectFromApi(
   const token = body?.data?.generativeToken;
   const collection = token?.entireCollection ?? [];
   const results: ParsedFindInput[] = [];
+  let hasMore = false;
+  const targetCount = tokenLimitTarget(context?.limit);
   for (const objkt of collection) {
     const tokenId = String(objkt?.onChainId ?? '');
     const contract = objkt?.gentkContractAddress ?? '';
@@ -128,7 +137,15 @@ export async function resolveFxhashProjectFromApi(
     const result = sourceTokenResult('fxhash', 'tezos', contract, tokenId);
     if (result) {
       results.push(result);
+      if (targetCount != null && results.length >= targetCount) {
+        hasMore = true;
+        break;
+      }
     }
   }
-  return { findings: results, ...(token?.name ? { title: token.name } : {}) };
+  return {
+    findings: limitTokenFindings(results, context?.limit),
+    ...(token?.name ? { title: token.name } : {}),
+    ...(hasMore ? { hasMore } : {}),
+  };
 }

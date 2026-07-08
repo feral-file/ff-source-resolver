@@ -1,5 +1,6 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput, TokenFindingsResult } from '../../../types';
+import { limitTokenFindings, tokenLimitTarget } from '../../../limits';
+import type { ParsedFindInput, ResolveTokensFromApiContext, TokenFindingsResult } from '../../../types';
 
 const OBJKT_GRAPHQL_ENDPOINT = 'https://data.objkt.com/v3/graphql';
 const OBJKT_API_PAGE_SIZE = 500;
@@ -72,7 +73,8 @@ interface ObjktApiToken {
  */
 export async function resolveObjktCollectionFromApi(
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
 ): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'objkt-collection') {
     return { findings: [] };
@@ -86,8 +88,14 @@ export async function resolveObjktCollectionFromApi(
 
   const results: ParsedFindInput[] = [];
   let lastPk = 0;
+  let hasMore = false;
+  const targetCount = tokenLimitTarget(context?.limit);
   for (let pageNumber = 0; pageNumber < OBJKT_API_MAX_PAGES; pageNumber += 1) {
-    const tokens = await fetchObjktCollectionTokensPage(fetchImpl, contract, lastPk);
+    const pageLimit =
+      targetCount == null
+        ? OBJKT_API_PAGE_SIZE
+        : Math.min(OBJKT_API_PAGE_SIZE, Math.max(1, targetCount - results.length));
+    const tokens = await fetchObjktCollectionTokensPage(fetchImpl, contract, lastPk, pageLimit);
     if (tokens.length === 0) {
       break;
     }
@@ -96,17 +104,28 @@ export async function resolveObjktCollectionFromApi(
       const result = objktApiToken(token);
       if (result) {
         results.push(result);
+        if (targetCount != null && results.length >= targetCount) {
+          hasMore = true;
+          break;
+        }
       }
+    }
+    if (hasMore) {
+      break;
     }
 
     const nextPk = maxTokenPk(tokens);
-    if (nextPk <= lastPk || tokens.length < OBJKT_API_PAGE_SIZE) {
+    if (nextPk <= lastPk || tokens.length < pageLimit) {
       break;
     }
     lastPk = nextPk;
   }
 
-  return { findings: results, ...(collection.name ? { title: collection.name } : {}) };
+  return {
+    findings: limitTokenFindings(results, context?.limit),
+    ...(collection.name ? { title: collection.name } : {}),
+    ...(hasMore ? { hasMore } : {}),
+  };
 }
 
 async function fetchObjktCollection(
@@ -122,11 +141,12 @@ async function fetchObjktCollection(
 async function fetchObjktCollectionTokensPage(
   fetchImpl: typeof fetch,
   contract: string,
-  lastPk: number
+  lastPk: number,
+  limit: number
 ): Promise<Array<ObjktApiToken | null>> {
   const body = await fetchObjktGraphql<ObjktTokensResponse>(fetchImpl, COLLECTION_TOKENS_QUERY, {
     contract,
-    limit: OBJKT_API_PAGE_SIZE,
+    limit,
     lastPk,
   });
   return body?.data?.token ?? [];

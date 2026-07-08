@@ -1,4 +1,4 @@
-import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
 import { resolveSuperRareCollectionFromApi } from './pages/api';
 import { parseSuperRareArtwork } from './pages/artwork';
 import { parseSuperRareCollection } from './pages/collection';
@@ -31,7 +31,7 @@ export const superRareAdapter: SourceSiteAdapter = {
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractSuperRareCollectionArtworks(url, html);
   },
-  async resolveTokensFromApi(url, _parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
-    return resolveSuperRareCollectionFromApi(url, fetchImpl);
+  async resolveTokensFromApi(url, _parsed, fetchImpl, context): Promise<TokenFindingsResult> {
+    return resolveSuperRareCollectionFromApi(url, fetchImpl, context);
   },
 };

@@ -34,7 +34,7 @@ export const fxhashAdapter: SourceSiteAdapter = {
   async resolveFromApi(_url, parsed, fetchImpl): Promise<SingleTokenFindingsResult> {
     return resolveFxhashFromApi(parsed, fetchImpl);
   },
-  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {
-    return resolveFxhashProjectFromApi(parsed, fetchImpl);
+  async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
+    return resolveFxhashProjectFromApi(parsed, fetchImpl, context);
   },
 };

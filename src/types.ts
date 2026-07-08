@@ -55,7 +55,17 @@ export interface SourceSiteAdapter {
 }
 
 export interface ResolveTokensFromApiContext {
+  /**
+   * html carries the already-fetched page body into API resolvers that need
+   * page state such as an internal project id before querying a public API.
+   */
   html?: string | null;
+  /**
+   * limit is the maximum number of usable token findings the caller needs.
+   * Adapters should use it to stop pagination early when the source API allows
+   * bounded reads, while returning hasMore when additional source tokens exist.
+   */
+  limit?: number;
 }
 
 export type TokenFindingsResult =
@@ -63,6 +73,7 @@ export type TokenFindingsResult =
   | {
       findings: readonly ParsedFindInput[];
       title?: string;
+      hasMore?: boolean;
     };
 
 export type SingleTokenFindingsResult =
@@ -87,6 +98,15 @@ export interface ResolveTokenInfoOptions {
   renderer?: HeadlessPageRenderer;
 }
 
+/**
+ * ResolveTokenInfosOptions configures collection-style token resolution.
+ * limit bounds the number of token coordinates returned while preserving the
+ * source fallback order and hasMore reporting.
+ */
+export interface ResolveTokenInfosOptions extends ResolveTokenInfoOptions {
+  limit?: number;
+}
+
 export type TokenInfoResolutionMethod = 'url' | 'dom' | 'headless' | 'api';
 
 export type TokenInfoResolution =
@@ -105,5 +125,6 @@ export type TokenInfosResolution =
       source: 'raw' | MarketplaceSource;
       coords: TokenCoords[];
       title?: string;
+      hasMore?: boolean;
     }
   | { kind: 'not-found'; reason: string };

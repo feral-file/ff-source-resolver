@@ -1,5 +1,6 @@
-import type { ParsedFindInput, TokenFindingsResult } from '../../../types';
+import type { ParsedFindInput, ResolveTokensFromApiContext, TokenFindingsResult } from '../../../types';
 import { sourceTokenResult } from '../../../helpers';
+import { limitTokenFindings, tokenLimitTarget } from '../../../limits';
 
 const VERSE_GRAPHQL_ENDPOINT = 'https://verse.works/query';
 const VERSE_ITEM_CARD_MARKERS = [
@@ -75,7 +76,8 @@ export function parseVerseSeries(url: URL): ParsedFindInput | null {
  */
 export async function resolveVerseSeriesFromApi(
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
 ): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'verse-series') {
     return { findings: [] };
@@ -99,18 +101,34 @@ export async function resolveVerseSeriesFromApi(
   const body = (await response.json().catch(() => null)) as VerseSeriesGraphqlResponse | null;
   const collections = body?.data?.collectionsPage?.nodes ?? [];
   const results: ParsedFindInput[] = [];
+  let hasMore = false;
+  const targetCount = tokenLimitTarget(context?.limit);
   for (const collection of collections) {
     for (const artwork of collection?.artworks ?? []) {
       for (const edition of artwork?.editions ?? []) {
         const result = verseEditionToken(edition);
         if (result) {
           results.push(result);
+          if (targetCount != null && results.length >= targetCount) {
+            hasMore = true;
+            break;
+          }
         }
       }
+      if (hasMore) {
+        break;
+      }
+    }
+    if (hasMore) {
+      break;
     }
   }
   const title = collections.find((collection) => collection?.name)?.name ?? undefined;
-  return { findings: results, ...(title ? { title } : {}) };
+  return {
+    findings: limitTokenFindings(results, context?.limit),
+    ...(title ? { title } : {}),
+    ...(hasMore ? { hasMore } : {}),
+  };
 }
 
 /**
@@ -148,6 +166,7 @@ function verseEditionToken(edition: VerseEdition | null): ParsedFindInput | null
   const tokenId = edition.tokenId == null ? '' : String(edition.tokenId);
   return contract && tokenId ? sourceTokenResult('verse', 'ethereum', contract, tokenId) : null;
 }
+
 
 /**
  * verseItemCardScopes returns small chunks around known Verse item-card markers.

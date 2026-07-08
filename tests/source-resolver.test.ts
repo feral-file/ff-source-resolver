@@ -734,6 +734,17 @@ describe('resolveTokenInfos collection support', () => {
     assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
   });
 
+  test('limit must be a positive integer', async () => {
+    await assert.rejects(
+      resolveTokenInfos(`ethereum:${ETH_CONTRACT}:5001410`, { limit: 0 }),
+      /resolveTokenInfos limit must be a positive integer/
+    );
+    await assert.rejects(
+      resolveTokenInfos(`ethereum:${ETH_CONTRACT}:5001410`, { limit: 1.5 }),
+      /resolveTokenInfos limit must be a positive integer/
+    );
+  });
+
   test('Objkt collection extracts rendered alias token links using the collection KT1', async () => {
     const html = [
       '<a href="https://tzkt.io/KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd">Contract</a>',
@@ -775,6 +786,28 @@ describe('resolveTokenInfos collection support', () => {
     ]);
     assert.equal(requests.length, 3);
     assert.equal(requests[1].url, 'https://data.objkt.com/v3/graphql');
+  });
+
+  test('Objkt collection limit bounds GraphQL pagination and reports hasMore', async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const result = await resolveTokenInfos('https://objkt.com/collections/objkt-paint-98', {
+      fetch: objktCollectionApiFetch(requests) as typeof fetch,
+      limit: 1,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.hasMore, true);
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
+    ]);
+    const tokenRequest = requests.find((request) =>
+      JSON.stringify(request.body).includes('ResolveObjktCollectionTokens')
+    );
+    assert.match(JSON.stringify(tokenRequest?.body), /"limit":2/);
   });
 
   test('Objkt collection contract URL resolves through the public GraphQL API', async () => {
@@ -904,6 +937,27 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('DOM collection limit returns the first tokens and hasMore without API support', async () => {
+    const html = openSeaCollectionItems(
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97'),
+      openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '15')
+    );
+    const result = await resolveTokenInfos('https://opensea.io/collection/a-eye-after-johannes-itten', {
+      fetch: htmlFetch(html) as typeof fetch,
+      limit: 1,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.equal(result.hasMore, true);
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
+    ]);
+  });
+
   test('OpenSea collection uses fetched page title instead of slug fallback', async () => {
     const html = [
       '<html><head><title>Chromie Squiggle by Snowfro | OpenSea</title></head><body>',
@@ -1014,6 +1068,38 @@ describe('resolveTokenInfos collection support', () => {
         'https://api.superrare.com/graphql',
       ]
     );
+  });
+
+  test('SuperRare collection limit bounds GraphQL page size and reports hasMore', async () => {
+    const contract = '0x3e930455dcbf4bc69de9926bdaf8ef782398786f';
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const result = await resolveTokenInfos(`https://superrare.com/collection/${contract}`, {
+      fetch: superRareCollectionApiFetch('<html>client shell only</html>', requests, [
+        {
+          nfts: [
+            { chainId: '1', contractAddress: contract, tokenId: 1 },
+            { chainId: '1', contractAddress: contract, tokenId: 2 },
+            { chainId: '1', contractAddress: contract, tokenId: 3 },
+          ],
+          hasNextPage: true,
+        },
+      ]) as typeof fetch,
+      limit: 2,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.hasMore, true);
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract, tokenId: '1' },
+      { chain: 'ethereum', contract, tokenId: '2' },
+    ]);
+    const apiRequest = requests.find((request) => request.url === 'https://api.superrare.com/graphql');
+    const variables = (apiRequest?.body as { variables?: Record<string, unknown> } | null)?.variables;
+    assert.equal((variables?.nftPagination as { take?: number } | undefined)?.take, 3);
   });
 
   test('SuperRare chain-prefixed collection resolves through the public API', async () => {
@@ -2127,6 +2213,7 @@ function superRareCollectionApiFetch(
     hasNextPage: boolean;
   }>
 ): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  let pageIndex = 0;
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     let body: unknown = null;
@@ -2150,10 +2237,9 @@ function superRareCollectionApiFetch(
     assert.deepEqual(variables?.filter, {
       contractAddress: { equals: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f' },
     });
-    assert.equal(
-      (variables?.nftPagination as { take?: number; sortBy?: string; order?: string } | undefined)?.take,
-      100
-    );
+    const take = (variables?.nftPagination as { take?: number; sortBy?: string; order?: string } | undefined)?.take;
+    assert.equal(Number.isInteger(take), true);
+    assert.ok(take != null && take > 0 && take <= 100);
     assert.equal(
       (variables?.nftPagination as { take?: number; sortBy?: string; order?: string } | undefined)?.sortBy,
       'createdAt'
@@ -2163,8 +2249,8 @@ function superRareCollectionApiFetch(
       'asc'
     );
 
-    const skip = (variables?.nftPagination as { skip?: number } | undefined)?.skip ?? 0;
-    const page = pages[skip / 100] ?? { nfts: [], hasNextPage: false };
+    const page = pages[pageIndex] ?? { nfts: [], hasNextPage: false };
+    pageIndex += 1;
     return Response.json({
       data: {
         getNfts: {

@@ -1,5 +1,6 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput } from '../../../types';
+import { limitTokenFindings, tokenLimitTarget } from '../../../limits';
+import type { ParsedFindInput, ResolveTokensFromApiContext, TokenFindingsResult } from '../../../types';
 import { parseSuperRareCollectionContract } from './collection';
 
 const SUPER_RARE_GRAPHQL_ENDPOINT = 'https://api.superrare.com/graphql';
@@ -50,37 +51,55 @@ interface SuperRareApiNft {
  */
 export async function resolveSuperRareCollectionFromApi(
   url: URL,
-  fetchImpl: typeof fetch
-): Promise<ParsedFindInput[]> {
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
+): Promise<TokenFindingsResult> {
   const contract = parseSuperRareCollectionContract(url);
   if (!contract) {
-    return [];
+    return { findings: [] };
   }
 
   const results: ParsedFindInput[] = [];
+  let hasMore = false;
+  let skip = 0;
+  const targetCount = tokenLimitTarget(context?.limit);
   for (let pageNumber = 0; pageNumber < SUPER_RARE_API_MAX_PAGES; pageNumber += 1) {
+    const pageLimit =
+      targetCount == null
+        ? SUPER_RARE_API_PAGE_SIZE
+        : Math.min(SUPER_RARE_API_PAGE_SIZE, Math.max(1, targetCount - results.length));
     const nfts = await fetchSuperRareCollectionTokensPage(
       fetchImpl,
       contract,
-      pageNumber * SUPER_RARE_API_PAGE_SIZE
+      skip,
+      pageLimit
     );
     for (const token of nfts.tokens) {
       const result = superRareApiToken(token);
       if (result) {
         results.push(result);
+        if (targetCount != null && results.length >= targetCount) {
+          hasMore = true;
+          break;
+        }
       }
     }
-    if (!nfts.hasNextPage || nfts.tokens.length === 0) {
+    if (hasMore || !nfts.hasNextPage || nfts.tokens.length === 0) {
       break;
     }
+    skip += nfts.tokens.length;
   }
-  return results;
+  return {
+    findings: limitTokenFindings(results, context?.limit),
+    ...(hasMore ? { hasMore } : {}),
+  };
 }
 
 async function fetchSuperRareCollectionTokensPage(
   fetchImpl: typeof fetch,
   contract: string,
-  skip: number
+  skip: number,
+  limit: number
 ): Promise<{ tokens: Array<SuperRareApiNft | null>; hasNextPage: boolean }> {
   const response = await fetchImpl(SUPER_RARE_GRAPHQL_ENDPOINT, {
     method: 'POST',
@@ -93,7 +112,7 @@ async function fetchSuperRareCollectionTokensPage(
       variables: {
         filter: { contractAddress: { equals: contract } },
         nftPagination: {
-          take: SUPER_RARE_API_PAGE_SIZE,
+          take: limit,
           skip,
           sortBy: 'createdAt',
           order: 'asc',
