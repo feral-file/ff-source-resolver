@@ -83,5 +83,6 @@ export type TokenInfosResolution =
       method: TokenInfoResolutionMethod;
       source: 'raw' | MarketplaceSource;
       coords: TokenCoords[];
+      title?: string;
     }
   | { kind: 'not-found'; reason: string };

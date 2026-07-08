@@ -701,6 +701,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'url');
+    assert.equal(result.title, 'Ethereum 0xabab...8070 #5001410');
     assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
   });
 
@@ -738,6 +739,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Objkt Paint 98');
     assert.deepEqual(result.coords, [
       { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
       { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '913' },
@@ -857,6 +859,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'dom');
+    assert.equal(result.title, 'A Eye After Johannes Itten');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '15' },

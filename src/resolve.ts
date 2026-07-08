@@ -84,7 +84,13 @@ export async function resolveTokenInfos(
 ): Promise<TokenInfosResolution> {
   const parsed = parseFindInput(input);
   if (parsed?.kind === 'token') {
-    return { kind: 'tokens', method: 'url', source: parsed.source, coords: [parsed.coords] };
+    return {
+      kind: 'tokens',
+      method: 'url',
+      source: parsed.source,
+      coords: [parsed.coords],
+      title: titleForParsedInput(parsed, null),
+    };
   }
 
   const url = parseUrl(input);
@@ -101,9 +107,9 @@ export async function resolveTokenInfos(
   if (domTokens.length > 0) {
     const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
     if (apiTokens.length > 0) {
-      return tokensResolution('api', apiTokens);
+      return tokensResolution('api', apiTokens, titleForParsedInput(parsed, fetched));
     }
-    return { kind: 'tokens', method: 'dom', source: domTokens[0].source, coords: domTokens.map((t) => t.coords) };
+    return tokensResolution('dom', domTokens, titleForParsedInput(parsed, fetched));
   }
 
   if (options.renderer) {
@@ -114,15 +120,15 @@ export async function resolveTokenInfos(
     if (renderedTokens.length > 0) {
       const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
       if (apiTokens.length > 0) {
-        return tokensResolution('api', apiTokens);
+        return tokensResolution('api', apiTokens, titleForParsedInput(parsed, rendered ?? fetched));
       }
-      return tokensResolution('headless', renderedTokens);
+      return tokensResolution('headless', renderedTokens, titleForParsedInput(parsed, rendered ?? fetched));
     }
   }
 
   const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
   if (apiTokens.length > 0) {
-    return tokensResolution('api', apiTokens);
+    return tokensResolution('api', apiTokens, titleForParsedInput(parsed, fetched));
   }
 
   return {
@@ -133,9 +139,16 @@ export async function resolveTokenInfos(
 
 function tokensResolution(
   method: 'dom' | 'headless' | 'api',
-  tokens: Array<Extract<ParsedFindInput, { kind: 'token' }>>
+  tokens: Array<Extract<ParsedFindInput, { kind: 'token' }>>,
+  title?: string
 ): TokenInfosResolution {
-  return { kind: 'tokens', method, source: tokens[0].source, coords: tokens.map((t) => t.coords) };
+  return {
+    kind: 'tokens',
+    method,
+    source: tokens[0].source,
+    coords: tokens.map((t) => t.coords),
+    ...(title ? { title } : {}),
+  };
 }
 
 /**
@@ -266,4 +279,80 @@ async function resolveApiParsedMany(
     return [];
   }
   return [];
+}
+
+function titleForParsedInput(parsed: ParsedFindInput | null, html: string | null): string | undefined {
+  const htmlTitle = html ? extractHtmlTitle(html) : null;
+  if (htmlTitle) {
+    return htmlTitle;
+  }
+  if (!parsed) {
+    return undefined;
+  }
+  if (parsed.kind === 'token') {
+    return `${chainTitle(parsed.coords.chain)} ${shortContract(parsed.coords.contract)} #${parsed.coords.tokenId}`;
+  }
+  if (parsed.kind === 'objkt-collection') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'ab-collection') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'os-collection') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'fxhash-project') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'fxhash-iteration') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'verse-series') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'raster-artwork') return humanizeIdentifier(parsed.slug);
+  if (parsed.kind === 'neort-art') return `Neort ${parsed.id}`;
+  if (parsed.kind === 'ff-url') return humanizeIdentifier(parsed.identifier);
+  return undefined;
+}
+
+function extractHtmlTitle(html: string): string | null {
+  const metaTitle =
+    metaContent(html, 'property', 'og:title') ??
+    metaContent(html, 'name', 'twitter:title') ??
+    metaContent(html, 'name', 'title');
+  const title = metaTitle ?? /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1];
+  return normalizeTitle(title);
+}
+
+function metaContent(html: string, attrName: string, attrValue: string): string | null {
+  const tagPattern = new RegExp(`<meta\\b[^>]*\\b${attrName}\\s*=\\s*["']${escapeRegex(attrValue)}["'][^>]*>`, 'i');
+  const tag = tagPattern.exec(html)?.[0];
+  if (!tag) {
+    return null;
+  }
+  return /\bcontent\s*=\s*(["'])(.*?)\1/i.exec(tag)?.[2] ?? null;
+}
+
+function normalizeTitle(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const decoded = value
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+  const title = decoded.replace(/\s+/g, ' ').trim();
+  return title || null;
+}
+
+function humanizeIdentifier(value: string): string {
+  const words = value
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+  return words.join(' ');
+}
+
+function chainTitle(chain: string): string {
+  return chain.charAt(0).toUpperCase() + chain.slice(1);
+}
+
+function shortContract(contract: string): string {
+  return contract.length > 14 ? `${contract.slice(0, 6)}...${contract.slice(-4)}` : contract;
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
