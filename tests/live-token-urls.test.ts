@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { parseFindInput, resolveTokenInfo } from '../src';
+import { parseFindInput, resolveTokenInfo, resolveTokenInfos } from '../src';
 import type { ParsedFindInput, TokenCoords } from '../src';
 
 const RUN_LIVE = process.env.RUN_LIVE_RESOLVER_TESTS === '1';
@@ -20,6 +20,20 @@ interface LiveSiteUrlFixture {
   requestedUrl?: string;
   acceptedFinalUrls?: string[];
   expected: ExpectedParsedInput;
+  browserNote: string;
+}
+
+interface LiveCollectionResolutionFixture {
+  source: string;
+  page: string;
+  url: string;
+  expectedMethod?: 'dom' | 'api';
+  expectedSource: string;
+  minTokenCount: number;
+  titleIncludes?: string;
+  expectedContract?: string;
+  expectedChain?: TokenCoords['chain'];
+  expectedToken?: TokenCoords;
   browserNote: string;
 }
 
@@ -308,6 +322,135 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
   },
 ];
 
+const LIVE_COLLECTION_RESOLUTION_FIXTURES: LiveCollectionResolutionFixture[] = [
+  {
+    source: 'objkt',
+    page: 'collection',
+    url: 'https://objkt.com/collections/objkt-paint-98',
+    expectedMethod: 'api',
+    expectedSource: 'objkt',
+    minTokenCount: 900,
+    titleIncludes: 'objkt Paint 98',
+    expectedChain: 'tezos',
+    expectedContract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
+    expectedToken: {
+      chain: 'tezos',
+      contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
+      tokenId: '1',
+    },
+    browserNote: 'Browser URL: https://objkt.com/collections/objkt-paint-98.',
+  },
+  {
+    source: 'opensea',
+    page: 'collection',
+    url: 'https://opensea.io/collection/npc-on-chain',
+    expectedMethod: 'dom',
+    expectedSource: 'opensea',
+    minTokenCount: 1,
+    titleIncludes: 'Non Playable Character',
+    expectedChain: 'ethereum',
+    expectedContract: '0xa2a6063b910fc7a7a286196f6c9b62b2797fa0ae',
+    browserNote: 'Browser title: Non Playable Character collection.',
+  },
+  {
+    source: 'artblocks',
+    page: 'collection',
+    url: 'https://www.artblocks.io/collection/ringers-by-dmitri-cherniak',
+    expectedMethod: 'api',
+    expectedSource: 'artblocks',
+    minTokenCount: 1000,
+    titleIncludes: 'Ringers',
+    expectedChain: 'ethereum',
+    expectedContract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
+    expectedToken: {
+      chain: 'ethereum',
+      contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
+      tokenId: '13000000',
+    },
+    browserNote: 'Browser title: Ringers by Dmitri Cherniak | Art Blocks.',
+  },
+  {
+    source: 'fxhash',
+    page: 'project',
+    url: 'https://www.fxhash.xyz/project/garden-monoliths',
+    expectedMethod: 'api',
+    expectedSource: 'fxhash',
+    minTokenCount: 250,
+    titleIncludes: 'Garden, Monoliths',
+    expectedChain: 'tezos',
+    expectedContract: 'KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE',
+    expectedToken: {
+      chain: 'tezos',
+      contract: 'KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE',
+      tokenId: '145971',
+    },
+    browserNote: 'Browser title: Garden, Monoliths by zancan | fxhash.',
+  },
+  {
+    source: 'superrare',
+    page: 'chain-prefixed-collection',
+    url: 'https://superrare.com/collection/1-0xf0827d0a4fcb325aaecd8269333198a21b385d85',
+    expectedMethod: 'api',
+    expectedSource: 'superrare',
+    minTokenCount: 10,
+    titleIncludes: 'Through Tubes',
+    expectedChain: 'ethereum',
+    expectedContract: '0xf0827d0a4fcb325aaecd8269333198a21b385d85',
+    expectedToken: {
+      chain: 'ethereum',
+      contract: '0xf0827d0a4fcb325aaecd8269333198a21b385d85',
+      tokenId: '15',
+    },
+    browserNote: 'Browser title: SuperRare.',
+  },
+  {
+    source: 'verse',
+    page: 'series',
+    url: 'https://verse.works/series/quantizer-by-harm-van-den-dorpel',
+    expectedMethod: 'api',
+    expectedSource: 'verse',
+    minTokenCount: 250,
+    titleIncludes: 'Quantizer',
+    expectedChain: 'ethereum',
+    expectedContract: '0x23b72f7458a204446983f544d655df10f70533e9',
+    expectedToken: {
+      chain: 'ethereum',
+      contract: '0x23b72f7458a204446983f544d655df10f70533e9',
+      tokenId: '167',
+    },
+    browserNote: 'Browser title: Quantizer by Harm van den Dorpel | Verse.',
+  },
+  {
+    source: 'raster',
+    page: 'artwork',
+    url: 'https://raster.art/artwork/split-logic-by-ricky-retouch',
+    expectedMethod: 'api',
+    expectedSource: 'raster',
+    minTokenCount: 20,
+    titleIncludes: 'Split Logic',
+    expectedChain: 'ethereum',
+    expectedContract: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+    expectedToken: {
+      chain: 'ethereum',
+      contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+      tokenId: '95',
+    },
+    browserNote: 'Browser title: Split Logic by Ricky Retouch | Raster.',
+  },
+  {
+    source: 'feralfile',
+    page: 'show',
+    url: 'https://feralfile.com/exhibitions/shows/ex-nihilo-a3c',
+    expectedMethod: 'api',
+    expectedSource: 'feralfile',
+    minTokenCount: 5,
+    titleIncludes: 'Ex Nihilo',
+    expectedChain: 'ethereum',
+    expectedContract: '0x32c07ade321b90813220f5064842b1f34a59f322',
+    browserNote: 'Browser title: Feral File | Exhibitions.',
+  },
+];
+
 describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
   for (const fixture of LIVE_SITE_URL_FIXTURES) {
     test(`${fixture.source} ${fixture.page}: browsed URL remains reachable`, async () => {
@@ -340,6 +483,49 @@ describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
       }
       assert.equal(result.method, 'url');
       assert.deepEqual(result.coords, fixture.expected.coords);
+    });
+  }
+});
+
+describe('live collection resolution fixtures', { skip: !RUN_LIVE }, () => {
+  for (const fixture of LIVE_COLLECTION_RESOLUTION_FIXTURES) {
+    test(`${fixture.source} ${fixture.page}: resolveTokenInfos returns real collection tokens`, async () => {
+      const result = await resolveTokenInfos(fixture.url);
+
+      assert.equal(result.kind, 'tokens', fixture.browserNote);
+      if (result.kind !== 'tokens') {
+        throw new Error('narrowing');
+      }
+      assert.equal(result.source, fixture.expectedSource);
+      if (fixture.expectedMethod) {
+        assert.equal(result.method, fixture.expectedMethod);
+      }
+      assert.ok(
+        result.coords.length >= fixture.minTokenCount,
+        `${fixture.source} returned only ${result.coords.length} tokens`
+      );
+      if (fixture.titleIncludes) {
+        assert.ok(result.title?.includes(fixture.titleIncludes), `Unexpected title: ${result.title}`);
+      }
+      if (fixture.expectedChain) {
+        assert.ok(
+          result.coords.some((coords) => coords.chain === fixture.expectedChain),
+          `${fixture.source} returned no ${fixture.expectedChain} tokens`
+        );
+      }
+      if (fixture.expectedContract) {
+        assert.ok(
+          result.coords.some((coords) => coords.contract === fixture.expectedContract),
+          `${fixture.source} returned no token for ${fixture.expectedContract}`
+        );
+      }
+      if (fixture.expectedToken) {
+        const expectedToken = fixture.expectedToken;
+        assert.ok(
+          result.coords.some((coords) => tokenCoordsEqual(coords, expectedToken)),
+          `${fixture.source} did not include expected token ${formatTokenCoords(expectedToken)}`
+        );
+      }
     });
   }
 });
@@ -418,4 +604,12 @@ function assertParsedInput(
     default:
       assert.deepEqual(actual, expected);
   }
+}
+
+function tokenCoordsEqual(left: TokenCoords, right: TokenCoords): boolean {
+  return left.chain === right.chain && left.contract === right.contract && left.tokenId === right.tokenId;
+}
+
+function formatTokenCoords(coords: TokenCoords): string {
+  return `${coords.chain}:${coords.contract}:${coords.tokenId}`;
 }

@@ -1,5 +1,6 @@
 import { sourceTokenResult } from '../../../helpers';
 import type { ParsedFindInput } from '../../../types';
+import { parseSuperRareCollectionContract } from './collection';
 
 const SUPER_RARE_GRAPHQL_ENDPOINT = 'https://api.superrare.com/graphql';
 const SUPER_RARE_API_PAGE_SIZE = 100;
@@ -41,10 +42,11 @@ interface SuperRareApiNft {
 }
 
 /**
- * resolveSuperRareCollectionFromApi maps supported `/collection/{contract}`
- * pages to every Ethereum NFT exposed by SuperRare's public keyless GraphQL
- * `getNfts` endpoint. SuperRare does not expose a slug in this URL shape; the
- * contract address is the stable collection identifier available to callers.
+ * resolveSuperRareCollectionFromApi maps supported `/collection/{contract}` and
+ * `/collection/1-{contract}` pages to every Ethereum NFT exposed by
+ * SuperRare's public keyless GraphQL `getNfts` endpoint. SuperRare does not
+ * expose a slug in this URL shape; the contract address is the stable
+ * collection identifier available to callers.
  */
 export async function resolveSuperRareCollectionFromApi(
   url: URL,
@@ -109,10 +111,6 @@ async function fetchSuperRareCollectionTokensPage(
     tokens: page?.nfts ?? [],
     hasNextPage: page?.pagination?.hasNextPage === true,
   };
-}
-
-function parseSuperRareCollectionContract(url: URL): string | null {
-  return /^\/collection\/(0x[a-fA-F0-9]{40})\/?$/.exec(url.pathname)?.[1].toLowerCase() ?? null;
 }
 
 function superRareApiToken(token: SuperRareApiNft | null): ParsedFindInput | null {
