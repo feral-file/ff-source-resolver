@@ -18,6 +18,7 @@ export type {
   ResolveTokenInfoOptions,
   SourceSiteAdapter,
   TokenCoords,
+  TokenFindingsResult,
   TokenInfoResolution,
   TokenInfoResolutionMethod,
   TokenInfosResolution,

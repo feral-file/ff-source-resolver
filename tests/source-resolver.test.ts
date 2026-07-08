@@ -739,7 +739,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
-    assert.equal(result.title, 'Objkt Paint 98');
+    assert.equal(result.title, 'Objkt Paint Collection');
     assert.deepEqual(result.coords, [
       { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '914' },
       { chain: 'tezos', contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd', tokenId: '913' },
@@ -1037,6 +1037,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'The Fable');
     assert.deepEqual(result.coords, [
       { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1565369' },
       { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1597012' },
@@ -1831,6 +1832,7 @@ function objktCollectionApiFetch(requests: Array<{ url: string; body: unknown }>
                 contract: 'KT1X5W2akGCxvykmHoqoQzJfEgg1RGNGBCDd',
                 path: 'objkt-paint-98',
                 collection_id: 'objkt-paint-98',
+                name: 'Objkt Paint Collection',
               },
             ],
           },
@@ -2100,6 +2102,7 @@ function fxhashProjectFetch(): (input: string | URL | Request, init?: RequestIni
       return Response.json({
         data: {
           generativeToken: {
+            name: 'The Fable',
             entireCollection: [
               {
                 onChainId: 1565369,

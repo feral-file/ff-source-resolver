@@ -6,6 +6,7 @@ import type {
   ParsedFindInput,
   ResolveTokenInfoOptions,
   TokenInfoResolution,
+  TokenFindingsResult,
   TokenInfosResolution,
 } from './types';
 
@@ -105,9 +106,10 @@ export async function resolveTokenInfos(
   const fetched = await fetchStaticHtml(url, options.fetch);
   const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
   if (domTokens.length > 0) {
-    const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
+    const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch);
+    const apiTokens = normalizeTokenFindings(apiFindings.findings);
     if (apiTokens.length > 0) {
-      return tokensResolution('api', apiTokens, titleForParsedInput(parsed, fetched));
+      return tokensResolution('api', apiTokens, apiFindings.title ?? titleForParsedInput(parsed, fetched));
     }
     return tokensResolution('dom', domTokens, titleForParsedInput(parsed, fetched));
   }
@@ -118,17 +120,23 @@ export async function resolveTokenInfos(
       ? normalizeTokenFindings(extractTokenFindings(site, url, rendered))
       : [];
     if (renderedTokens.length > 0) {
-      const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
+      const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch);
+      const apiTokens = normalizeTokenFindings(apiFindings.findings);
       if (apiTokens.length > 0) {
-        return tokensResolution('api', apiTokens, titleForParsedInput(parsed, rendered ?? fetched));
+        return tokensResolution(
+          'api',
+          apiTokens,
+          apiFindings.title ?? titleForParsedInput(parsed, rendered ?? fetched)
+        );
       }
       return tokensResolution('headless', renderedTokens, titleForParsedInput(parsed, rendered ?? fetched));
     }
   }
 
-  const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
+  const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch);
+  const apiTokens = normalizeTokenFindings(apiFindings.findings);
   if (apiTokens.length > 0) {
-    return tokensResolution('api', apiTokens, titleForParsedInput(parsed, fetched));
+    return tokensResolution('api', apiTokens, apiFindings.title ?? titleForParsedInput(parsed, fetched));
   }
 
   return {
@@ -259,26 +267,35 @@ async function resolveApiParsedMany(
   url: URL,
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch | undefined
-): Promise<readonly ParsedFindInput[]> {
+): Promise<{ findings: readonly ParsedFindInput[]; title?: string }> {
   const doFetch = fetchImpl ?? globalThis.fetch;
   if (!doFetch) {
-    return [];
+    return { findings: [] };
   }
   try {
     if (site.resolveTokensFromApi) {
-      const results = await site.resolveTokensFromApi(url, parsed, doFetch);
-      if (results.length > 0) {
-        return results;
+      const result = normalizeTokenFindingsResult(await site.resolveTokensFromApi(url, parsed, doFetch));
+      if (result.findings.length > 0) {
+        return result;
       }
     }
     if (site.resolveFromApi) {
       const result = await site.resolveFromApi(url, parsed, doFetch);
-      return result ? [result] : [];
+      return { findings: result ? [result] : [] };
     }
   } catch {
-    return [];
+    return { findings: [] };
   }
-  return [];
+  return { findings: [] };
+}
+
+function normalizeTokenFindingsResult(result: TokenFindingsResult): {
+  findings: readonly ParsedFindInput[];
+  title?: string;
+} {
+  return 'findings' in result
+    ? { findings: result.findings, ...(result.title ? { title: result.title } : {}) }
+    : { findings: result };
 }
 
 function titleForParsedInput(parsed: ParsedFindInput | null, html: string | null): string | undefined {

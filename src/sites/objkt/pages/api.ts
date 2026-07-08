@@ -1,5 +1,5 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput } from '../../../types';
+import type { ParsedFindInput, TokenFindingsResult } from '../../../types';
 
 const OBJKT_GRAPHQL_ENDPOINT = 'https://data.objkt.com/v3/graphql';
 const OBJKT_API_PAGE_SIZE = 500;
@@ -20,6 +20,7 @@ const COLLECTION_QUERY = `
       contract
       path
       collection_id
+      name
     }
   }
 `;
@@ -54,6 +55,7 @@ interface ObjktCollection {
   contract?: string | null;
   path?: string | null;
   collection_id?: string | null;
+  name?: string | null;
 }
 
 interface ObjktApiToken {
@@ -71,15 +73,15 @@ interface ObjktApiToken {
 export async function resolveObjktCollectionFromApi(
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch
-): Promise<ParsedFindInput[]> {
+): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'objkt-collection') {
-    return [];
+    return { findings: [] };
   }
 
   const collection = await fetchObjktCollection(fetchImpl, parsed.slug);
   const contract = collection?.contract;
   if (!contract) {
-    return [];
+    return { findings: [] };
   }
 
   const results: ParsedFindInput[] = [];
@@ -104,7 +106,7 @@ export async function resolveObjktCollectionFromApi(
     lastPk = nextPk;
   }
 
-  return results;
+  return { findings: results, ...(collection.name ? { title: collection.name } : {}) };
 }
 
 async function fetchObjktCollection(

@@ -49,8 +49,15 @@ export interface SourceSiteAdapter {
     url: URL,
     parsed: ParsedFindInput | null,
     fetchImpl: typeof fetch
-  ): Promise<readonly ParsedFindInput[]>;
+  ): Promise<TokenFindingsResult>;
 }
+
+export type TokenFindingsResult =
+  | readonly ParsedFindInput[]
+  | {
+      findings: readonly ParsedFindInput[];
+      title?: string;
+    };
 
 /**
  * HeadlessPageRenderer is the vendor-neutral browser hook used after URL

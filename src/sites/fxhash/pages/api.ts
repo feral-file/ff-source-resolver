@@ -1,5 +1,5 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput } from '../../../types';
+import type { ParsedFindInput, TokenFindingsResult } from '../../../types';
 
 const FXHASH_GRAPHQL_ENDPOINT = 'https://api.fxhash.xyz/graphql';
 
@@ -15,6 +15,7 @@ const ITERATION_QUERY = `
 const PROJECT_COLLECTION_QUERY = `
   query ResolveFxhashProject($slug: String!) {
     generativeToken(slug: $slug) {
+      name
       entireCollection {
         onChainId
         gentkContractAddress
@@ -35,6 +36,7 @@ interface FxhashIterationGraphqlResponse {
 interface FxhashProjectGraphqlResponse {
   data?: {
     generativeToken?: {
+      name?: string | null;
       entireCollection?: Array<{
         onChainId?: number | string | null;
         gentkContractAddress?: string | null;
@@ -88,9 +90,9 @@ export async function resolveFxhashFromApi(
 export async function resolveFxhashProjectFromApi(
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch
-): Promise<ParsedFindInput[]> {
+): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'fxhash-project') {
-    return [];
+    return { findings: [] };
   }
 
   const response = await fetchImpl(FXHASH_GRAPHQL_ENDPOINT, {
@@ -105,11 +107,12 @@ export async function resolveFxhashProjectFromApi(
     }),
   });
   if (!response.ok) {
-    return [];
+    return { findings: [] };
   }
 
   const body = (await response.json().catch(() => null)) as FxhashProjectGraphqlResponse | null;
-  const collection = body?.data?.generativeToken?.entireCollection ?? [];
+  const token = body?.data?.generativeToken;
+  const collection = token?.entireCollection ?? [];
   const results: ParsedFindInput[] = [];
   for (const objkt of collection) {
     const tokenId = String(objkt?.onChainId ?? '');
@@ -122,5 +125,5 @@ export async function resolveFxhashProjectFromApi(
       results.push(result);
     }
   }
-  return results;
+  return { findings: results, ...(token?.name ? { title: token.name } : {}) };
 }
