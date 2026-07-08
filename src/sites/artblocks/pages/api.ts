@@ -1,5 +1,5 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput } from '../../../types';
+import type { ParsedFindInput, ResolveTokensFromApiContext } from '../../../types';
 
 const ART_BLOCKS_GRAPHQL_ENDPOINT = 'https://data.artblocks.io/v1/graphql';
 const ART_BLOCKS_API_PAGE_SIZE = 1000;
@@ -52,17 +52,18 @@ interface ArtBlocksApiToken {
 export async function resolveArtBlocksCollectionFromApi(
   url: URL,
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
 ): Promise<ParsedFindInput[]> {
   if (parsed?.kind !== 'ab-collection') {
     return [];
   }
 
-  const page = await fetchImpl(url.toString(), { headers: ART_BLOCKS_PAGE_HEADERS });
-  if (!page.ok) {
+  const html = context?.html ?? (await fetchArtBlocksCollectionPageHtml(url, fetchImpl));
+  if (!html) {
     return [];
   }
-  const projectId = extractArtBlocksProjectId(await page.text());
+  const projectId = extractArtBlocksProjectId(html);
   if (!projectId) {
     return [];
   }
@@ -84,6 +85,17 @@ export async function resolveArtBlocksCollectionFromApi(
     }
   }
   return results;
+}
+
+async function fetchArtBlocksCollectionPageHtml(
+  url: URL,
+  fetchImpl: typeof fetch
+): Promise<string | null> {
+  const page = await fetchImpl(url.toString(), { headers: ART_BLOCKS_PAGE_HEADERS });
+  if (!page.ok) {
+    return null;
+  }
+  return page.text();
 }
 
 async function fetchArtBlocksProjectTokensPage(

@@ -837,12 +837,13 @@ describe('resolveTokenInfos collection support', () => {
       `\\"project_id\\":\\"${projectId}\\"}`,
       '"])</script>',
     ].join('');
+    const requests: string[] = [];
     const result = await resolveTokenInfos('https://www.artblocks.io/collection/while-true-by-lars-wander', {
       fetch: artBlocksCollectionApiFetch(html, [
         { chain_id: 1, token_id: '498000000', contract_address: contract },
         { chain_id: 1, token_id: '498000001', contract_address: contract },
         { chain_id: 1, token_id: '498000002', contract_address: contract },
-      ]) as typeof fetch,
+      ], requests) as typeof fetch,
     });
 
     assert.equal(result.kind, 'tokens');
@@ -855,6 +856,10 @@ describe('resolveTokenInfos collection support', () => {
       { chain: 'ethereum', contract, tokenId: '498000001' },
       { chain: 'ethereum', contract, tokenId: '498000002' },
     ]);
+    assert.equal(
+      requests.filter((url) => url.startsWith('https://www.artblocks.io/collection/')).length,
+      1
+    );
   });
 
   test('OpenSea collection extracts every scoped Ethereum item', async () => {
@@ -2088,10 +2093,12 @@ function artBlocksMetadataTokenWithLateContract(contract: string, tokenId: strin
 
 function artBlocksCollectionApiFetch(
   html: string,
-  tokens: Array<{ chain_id: number; token_id: string; contract_address: string }>
+  tokens: Array<{ chain_id: number; token_id: string; contract_address: string }>,
+  requests: string[] = []
 ): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
+    requests.push(url);
     if (url === 'https://data.artblocks.io/v1/graphql') {
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       assert.equal(body.variables?.where?.project_id?._eq, `${tokens[0].contract_address}-498`);

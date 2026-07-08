@@ -48,8 +48,13 @@ export interface SourceSiteAdapter {
   resolveTokensFromApi?(
     url: URL,
     parsed: ParsedFindInput | null,
-    fetchImpl: typeof fetch
+    fetchImpl: typeof fetch,
+    context?: ResolveTokensFromApiContext
   ): Promise<TokenFindingsResult>;
+}
+
+export interface ResolveTokensFromApiContext {
+  html?: string | null;
 }
 
 export type TokenFindingsResult =

@@ -30,7 +30,7 @@ export const artBlocksAdapter: SourceSiteAdapter = {
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractArtBlocksTokensFromHtml(url, html);
   },
-  async resolveTokensFromApi(url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
-    return resolveArtBlocksCollectionFromApi(url, parsed, fetchImpl);
+  async resolveTokensFromApi(url, parsed, fetchImpl, context): Promise<readonly ParsedFindInput[]> {
+    return resolveArtBlocksCollectionFromApi(url, parsed, fetchImpl, context);
   },
 };

@@ -107,7 +107,7 @@ export async function resolveTokenInfos(
   const fetched = await fetchStaticHtml(url, options.fetch);
   const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
   if (domTokens.length > 0) {
-    const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch);
+    const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched);
     const apiTokens = normalizeTokenFindings(apiFindings.findings);
     if (apiTokens.length > 0) {
       return tokensResolution('api', apiTokens, apiFindings.title ?? titleForParsedInput(parsed, fetched));
@@ -121,7 +121,13 @@ export async function resolveTokenInfos(
       ? normalizeTokenFindings(extractTokenFindings(site, url, rendered))
       : [];
     if (renderedTokens.length > 0) {
-      const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch);
+      const apiFindings = await resolveApiParsedMany(
+        site,
+        url,
+        parsed,
+        options.fetch,
+        rendered ?? fetched
+      );
       const apiTokens = normalizeTokenFindings(apiFindings.findings);
       if (apiTokens.length > 0) {
         return tokensResolution(
@@ -134,7 +140,7 @@ export async function resolveTokenInfos(
     }
   }
 
-  const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch);
+  const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched);
   const apiTokens = normalizeTokenFindings(apiFindings.findings);
   if (apiTokens.length > 0) {
     return tokensResolution('api', apiTokens, apiFindings.title ?? titleForParsedInput(parsed, fetched));
@@ -280,7 +286,8 @@ async function resolveApiParsedMany(
   site: NonNullable<ReturnType<typeof matchSite>>,
   url: URL,
   parsed: ParsedFindInput | null,
-  fetchImpl: typeof fetch | undefined
+  fetchImpl: typeof fetch | undefined,
+  html?: string | null
 ): Promise<{ findings: readonly ParsedFindInput[]; title?: string }> {
   const doFetch = fetchImpl ?? globalThis.fetch;
   if (!doFetch) {
@@ -288,7 +295,9 @@ async function resolveApiParsedMany(
   }
   try {
     if (site.resolveTokensFromApi) {
-      const result = normalizeTokenFindingsResult(await site.resolveTokensFromApi(url, parsed, doFetch));
+      const result = normalizeTokenFindingsResult(
+        await site.resolveTokensFromApi(url, parsed, doFetch, { html })
+      );
       if (result.findings.length > 0) {
         return result;
       }
