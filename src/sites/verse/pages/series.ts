@@ -1,4 +1,4 @@
-import type { ParsedFindInput } from '../../../types';
+import type { ParsedFindInput, TokenFindingsResult } from '../../../types';
 import { sourceTokenResult } from '../../../helpers';
 
 const VERSE_GRAPHQL_ENDPOINT = 'https://verse.works/query';
@@ -16,6 +16,7 @@ const SERIES_EDITIONS_QUERY = `
   query ResolveVerseSeriesEditions($slug: String!) {
     collectionsPage(request: { filter: { slugs: [$slug] }, first: 1 }) {
       nodes {
+        name
         artworks {
           editions {
             tokenId
@@ -39,6 +40,7 @@ interface VerseSeriesGraphqlResponse {
 }
 
 interface VerseCollection {
+  name?: string | null;
   artworks?: Array<VerseArtwork | null> | null;
 }
 
@@ -74,9 +76,9 @@ export function parseVerseSeries(url: URL): ParsedFindInput | null {
 export async function resolveVerseSeriesFromApi(
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch
-): Promise<ParsedFindInput[]> {
+): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'verse-series') {
-    return [];
+    return { findings: [] };
   }
 
   const response = await fetchImpl(VERSE_GRAPHQL_ENDPOINT, {
@@ -91,7 +93,7 @@ export async function resolveVerseSeriesFromApi(
     }),
   });
   if (!response.ok) {
-    return [];
+    return { findings: [] };
   }
 
   const body = (await response.json().catch(() => null)) as VerseSeriesGraphqlResponse | null;
@@ -107,7 +109,8 @@ export async function resolveVerseSeriesFromApi(
       }
     }
   }
-  return results;
+  const title = collections.find((collection) => collection?.name)?.name ?? undefined;
+  return { findings: results, ...(title ? { title } : {}) };
 }
 
 /**

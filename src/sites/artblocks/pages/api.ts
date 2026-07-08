@@ -1,5 +1,5 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput, ResolveTokensFromApiContext } from '../../../types';
+import type { ParsedFindInput, ResolveTokensFromApiContext, TokenFindingsResult } from '../../../types';
 
 const ART_BLOCKS_GRAPHQL_ENDPOINT = 'https://data.artblocks.io/v1/graphql';
 const ART_BLOCKS_API_PAGE_SIZE = 1000;
@@ -29,6 +29,12 @@ const PROJECT_TOKENS_QUERY = `
       chain_id
       token_id
       contract_address
+      invocation
+      project_name
+      project {
+        name
+        artist_name
+      }
     }
   }
 `;
@@ -43,6 +49,12 @@ interface ArtBlocksApiToken {
   chain_id?: number | null;
   token_id?: string | number | null;
   contract_address?: string | null;
+  invocation?: string | number | null;
+  project_name?: string | null;
+  project?: {
+    name?: string | null;
+    artist_name?: string | null;
+  } | null;
 }
 
 /**
@@ -54,27 +66,29 @@ export async function resolveArtBlocksCollectionFromApi(
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch,
   context?: ResolveTokensFromApiContext
-): Promise<ParsedFindInput[]> {
+): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'ab-collection') {
-    return [];
+    return { findings: [] };
   }
 
   const html = context?.html ?? (await fetchArtBlocksCollectionPageHtml(url, fetchImpl));
   if (!html) {
-    return [];
+    return { findings: [] };
   }
   const projectId = extractArtBlocksProjectId(html);
   if (!projectId) {
-    return [];
+    return { findings: [] };
   }
 
   const results: ParsedFindInput[] = [];
+  let firstApiToken: ArtBlocksApiToken | null = null;
   for (let pageNumber = 0; pageNumber < ART_BLOCKS_API_MAX_PAGES; pageNumber += 1) {
     const tokens = await fetchArtBlocksProjectTokensPage(fetchImpl, projectId, pageNumber * ART_BLOCKS_API_PAGE_SIZE);
     if (tokens.length === 0) {
       break;
     }
     for (const token of tokens) {
+      firstApiToken ??= token;
       const result = artBlocksApiToken(token);
       if (result) {
         results.push(result);
@@ -84,7 +98,8 @@ export async function resolveArtBlocksCollectionFromApi(
       break;
     }
   }
-  return results;
+  const title = artBlocksTitle(firstApiToken, results.length);
+  return { findings: results, ...(title ? { title } : {}) };
 }
 
 async function fetchArtBlocksCollectionPageHtml(
@@ -138,4 +153,18 @@ function artBlocksApiToken(token: ArtBlocksApiToken | null): ParsedFindInput | n
   const contract = token.contract_address ?? '';
   const tokenId = token.token_id == null ? '' : String(token.token_id);
   return contract && tokenId ? sourceTokenResult('artblocks', 'ethereum', contract, tokenId) : null;
+}
+
+function artBlocksTitle(token: ArtBlocksApiToken | null, resultCount: number): string | undefined {
+  const projectName = token?.project?.name ?? token?.project_name ?? null;
+  const artistName = token?.project?.artist_name ?? null;
+  if (!projectName) {
+    return undefined;
+  }
+  if (resultCount === 1 && token?.invocation != null) {
+    return artistName
+      ? `${projectName} #${token.invocation} by ${artistName}`
+      : `${projectName} #${token.invocation}`;
+  }
+  return artistName ? `${projectName} by ${artistName}` : projectName;
 }

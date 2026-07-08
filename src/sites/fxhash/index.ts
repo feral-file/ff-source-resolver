@@ -1,4 +1,9 @@
-import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
+import type {
+  ParsedFindInput,
+  SingleTokenFindingsResult,
+  SourceSiteAdapter,
+  TokenFindingsResult,
+} from '../../types';
 import { resolveFxhashFromApi, resolveFxhashProjectFromApi } from './pages/api';
 import { parseFxhashGentk } from './pages/gentk';
 import { parseFxhashIteration } from './pages/iteration';
@@ -26,7 +31,7 @@ export const fxhashAdapter: SourceSiteAdapter = {
     // scanning broad rendered HTML or embedded app state.
     return null;
   },
-  async resolveFromApi(_url, parsed, fetchImpl): Promise<ParsedFindInput | null> {
+  async resolveFromApi(_url, parsed, fetchImpl): Promise<SingleTokenFindingsResult> {
     return resolveFxhashFromApi(parsed, fetchImpl);
   },
   async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {

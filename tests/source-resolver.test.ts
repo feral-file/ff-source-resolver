@@ -608,9 +608,12 @@ describe('resolveTokenInfo fallback order', () => {
     });
   });
 
-  test('parsed token URLs use page title metadata when available', async () => {
+  test('parsed token URLs keep generic titles without fetching page metadata', async () => {
+    const fetchImpl = async (): Promise<Response> => {
+      throw new Error('fetch should not run for URL-only token resolution');
+    };
     const result = await resolveTokenInfos(`https://www.artblocks.io/token/${ETH_CONTRACT}-5001410`, {
-      fetch: htmlFetch('<html><head><title>Gazers #249 by Matt Kane | Art Blocks</title></head></html>') as typeof fetch,
+      fetch: fetchImpl as typeof fetch,
     });
 
     assert.equal(result.kind, 'tokens');
@@ -618,7 +621,7 @@ describe('resolveTokenInfo fallback order', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'url');
-    assert.equal(result.title, 'Gazers #249 by Matt Kane | Art Blocks');
+    assert.equal(result.title, 'Ethereum 0xabab...8070 #5001410');
     assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
   });
 
@@ -783,9 +786,11 @@ describe('resolveTokenInfos collection support', () => {
 
   test('Art Blocks collection extracts static tokens_metadata records into an array', async () => {
     const html = [
+      '<html><head><title>Squares and Triangles by Maksim Hapeyenka | Art Blocks</title></head>',
       artBlocksMetadataToken(ETH_CONTRACT, '255000641'),
       artBlocksMetadataToken(ETH_CONTRACT, '255000642'),
       artBlocksMetadataToken(ETH_CONTRACT, '255000641'),
+      '</html>',
     ].join('');
     const result = await resolveTokenInfos('https://www.artblocks.io/collection/screens-by-thomas-lin-pedersen', {
       fetch: htmlFetch(html) as typeof fetch,
@@ -796,6 +801,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'dom');
+    assert.equal(result.title, 'Squares and Triangles by Maksim Hapeyenka');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000641' },
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000642' },
@@ -840,9 +846,9 @@ describe('resolveTokenInfos collection support', () => {
     const requests: string[] = [];
     const result = await resolveTokenInfos('https://www.artblocks.io/collection/while-true-by-lars-wander', {
       fetch: artBlocksCollectionApiFetch(html, [
-        { chain_id: 1, token_id: '498000000', contract_address: contract },
-        { chain_id: 1, token_id: '498000001', contract_address: contract },
-        { chain_id: 1, token_id: '498000002', contract_address: contract },
+        artBlocksApiToken(contract, '498000000', 'While True', 'Lars Wander', 0),
+        artBlocksApiToken(contract, '498000001', 'While True', 'Lars Wander', 1),
+        artBlocksApiToken(contract, '498000002', 'While True', 'Lars Wander', 2),
       ], requests) as typeof fetch,
     });
 
@@ -851,6 +857,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'While True by Lars Wander');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract, tokenId: '498000000' },
       { chain: 'ethereum', contract, tokenId: '498000001' },
@@ -883,6 +890,24 @@ describe('resolveTokenInfos collection support', () => {
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '97' },
       { chain: 'ethereum', contract: OPENSEA_COLLECTION_CONTRACT, tokenId: '15' },
     ]);
+  });
+
+  test('OpenSea collection uses fetched page title instead of slug fallback', async () => {
+    const html = [
+      '<html><head><title>Chromie Squiggle by Snowfro | OpenSea</title></head><body>',
+      openSeaCollectionItems(openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97')),
+      '</body></html>',
+    ].join('');
+    const result = await resolveTokenInfos('https://opensea.io/collection/not-the-title', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.equal(result.title, 'Chromie Squiggle by Snowfro');
   });
 
   test('OpenSea collection does not call the authenticated collection NFTs API', async () => {
@@ -1007,6 +1032,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Quantizer');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: '0x23b72f7458a204446983f544d655df10f70533e9', tokenId: '167' },
       { chain: 'ethereum', contract: '0x23b72f7458a204446983f544d655df10f70533e9', tokenId: '0' },
@@ -1040,6 +1066,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Split Logic by Ricky Retouch');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '95' },
       { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '100' },
@@ -1063,6 +1090,22 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('fxhash iteration API title is used for single-token slug resolution', async () => {
+    const result = await resolveTokenInfos('https://www.fxhash.xyz/iteration/garden-monoliths-215', {
+      fetch: fxhashIterationFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Garden, Monoliths #215');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '824876' },
+    ]);
+  });
+
   test('Feral File show resolves all series artwork tokens through public API', async () => {
     const result = await resolveTokenInfos('https://feralfile.com/exhibitions/shows/ex-nihilo-a3c', {
       fetch: feralFileShowFetch() as typeof fetch,
@@ -1073,6 +1116,7 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Ex Nihilo');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '1' },
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '2' },
@@ -1090,10 +1134,25 @@ describe('resolveTokenInfos collection support', () => {
       throw new Error('narrowing');
     }
     assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Cosmos Simulacrum');
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '7' },
       { chain: 'tezos', contract: TEZOS_CONTRACT, tokenId: '8' },
     ]);
+  });
+
+  test('Feral File artwork resolves one token and title through public API', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/artwork/12345', {
+      fetch: feralFileArtworkFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Better Artwork Title');
+    assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '9' }]);
   });
 });
 
@@ -1902,6 +1961,7 @@ function verseSeriesApiFetch(): (input: string | URL | Request, init?: RequestIn
           collectionsPage: {
             nodes: [
               {
+                name: 'Quantizer',
                 artworks: [
                   {
                     editions: [
@@ -2091,9 +2151,40 @@ function artBlocksMetadataTokenWithLateContract(contract: string, tokenId: strin
   );
 }
 
+function artBlocksApiToken(
+  contract: string,
+  tokenId: string,
+  projectName: string,
+  artistName: string,
+  invocation: number
+): {
+  chain_id: number;
+  token_id: string;
+  contract_address: string;
+  project_name: string;
+  invocation: number;
+  project: { name: string; artist_name: string };
+} {
+  return {
+    chain_id: 1,
+    token_id: tokenId,
+    contract_address: contract,
+    project_name: projectName,
+    invocation,
+    project: { name: projectName, artist_name: artistName },
+  };
+}
+
 function artBlocksCollectionApiFetch(
   html: string,
-  tokens: Array<{ chain_id: number; token_id: string; contract_address: string }>,
+  tokens: Array<{
+    chain_id: number;
+    token_id: string;
+    contract_address: string;
+    project_name?: string;
+    invocation?: number;
+    project?: { name: string; artist_name: string };
+  }>,
   requests: string[] = []
 ): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -2145,11 +2236,34 @@ function fxhashProjectFetch(): (input: string | URL | Request, init?: RequestIni
   };
 }
 
+function fxhashIterationFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://api.fxhash.xyz/graphql') {
+      return Response.json({
+        data: {
+          objkt: {
+            name: 'Garden, Monoliths #215',
+            onChainId: 824876,
+            gentkContractAddress: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+          },
+        },
+      });
+    }
+    return new Response('<html>client shell only</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
+}
+
 function feralFileShowFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url === 'https://feralfile.com/api/exhibitions/ex-nihilo-a3c') {
-      return Response.json({ result: { id: 'show-uuid', series: [{ id: 'series-a' }, { id: 'series-b' }] } });
+      return Response.json({
+        result: { id: 'show-uuid', title: 'Ex Nihilo', series: [{ id: 'series-a' }, { id: 'series-b' }] },
+      });
     }
     if (url === 'https://feralfile.com/api/artworks?seriesID=series-a') {
       return Response.json({
@@ -2178,7 +2292,7 @@ function feralFileSeriesFetch(): (input: string | URL | Request, init?: RequestI
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url === 'https://feralfile.com/api/series/cosmos-simulacrum') {
-      return Response.json({ result: { id: 'series-uuid' } });
+      return Response.json({ result: { id: 'series-uuid', title: 'Cosmos Simulacrum' } });
     }
     if (url === 'https://feralfile.com/api/artworks?seriesID=series-uuid') {
       return Response.json({
@@ -2195,14 +2309,38 @@ function feralFileSeriesFetch(): (input: string | URL | Request, init?: RequestI
   };
 }
 
+function feralFileArtworkFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://feralfile.com/api/artworks/12345') {
+      return Response.json({
+        result: {
+          chain: 'ethereum',
+          contractAddress: ETH_CONTRACT,
+          tokenID: '9',
+          title: 'Better Artwork Title',
+        },
+      });
+    }
+    return new Response('<html>client shell only</html>', {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
+}
+
 function rasterApiFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url === 'https://raster.art/artwork/split-logic-by-ricky-retouch') {
-      return new Response('{"children":[["$","$L25",null,{"artworkId\\":2886465}]]}', {
+      return new Response(
+        '<html><head><title>Split Logic by Ricky Retouch | Raster</title></head>' +
+          '<body>{"children":[["$","$L25",null,{"artworkId\\":2886465}]]}</body></html>',
+        {
         status: 200,
         headers: { 'Content-Type': 'text/html' },
-      });
+        }
+      );
     }
     if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=0')) {
       return Response.json({

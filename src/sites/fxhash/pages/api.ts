@@ -1,11 +1,12 @@
 import { sourceTokenResult } from '../../../helpers';
-import type { ParsedFindInput, TokenFindingsResult } from '../../../types';
+import type { ParsedFindInput, SingleTokenFindingsResult, TokenFindingsResult } from '../../../types';
 
 const FXHASH_GRAPHQL_ENDPOINT = 'https://api.fxhash.xyz/graphql';
 
 const ITERATION_QUERY = `
   query ResolveFxhashIteration($slug: String!) {
     objkt(slug: $slug) {
+      name
       onChainId
       gentkContractAddress
     }
@@ -27,6 +28,7 @@ const PROJECT_COLLECTION_QUERY = `
 interface FxhashIterationGraphqlResponse {
   data?: {
     objkt?: {
+      name?: string | null;
       onChainId?: number | string | null;
       gentkContractAddress?: string | null;
     } | null;
@@ -52,7 +54,7 @@ interface FxhashProjectGraphqlResponse {
 export async function resolveFxhashFromApi(
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch
-): Promise<ParsedFindInput | null> {
+): Promise<SingleTokenFindingsResult> {
   if (parsed?.kind !== 'fxhash-iteration') {
     return null;
   }
@@ -80,7 +82,10 @@ export async function resolveFxhashFromApi(
     return null;
   }
 
-  return sourceTokenResult('fxhash', 'tezos', contract, tokenId);
+  return {
+    finding: sourceTokenResult('fxhash', 'tezos', contract, tokenId),
+    ...(objkt?.name ? { title: objkt.name } : {}),
+  };
 }
 
 /**

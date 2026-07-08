@@ -1,4 +1,4 @@
-import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
 import { sourceTokenResult } from '../../helpers';
 import { parseFeralFileArtwork } from './pages/artwork';
 import { parseFeralFileSeries } from './pages/series';
@@ -10,17 +10,23 @@ interface FeralFileApiResponse<T> {
 
 interface FeralFileShow {
   id?: string;
+  title?: string;
+  name?: string;
   series?: Array<{ id?: string } | null>;
 }
 
 interface FeralFileSeries {
   id?: string;
+  title?: string;
+  name?: string;
 }
 
 interface FeralFileArtwork {
   chain?: string;
   contractAddress?: string;
   tokenID?: string | number;
+  title?: string;
+  name?: string;
 }
 
 /**
@@ -41,7 +47,7 @@ export const feralFileAdapter: SourceSiteAdapter = {
       }
     );
   },
-  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<TokenFindingsResult> {
     return resolveFeralFileTokensFromApi(parsed, fetchImpl);
   },
 };
@@ -49,9 +55,9 @@ export const feralFileAdapter: SourceSiteAdapter = {
 async function resolveFeralFileTokensFromApi(
   parsed: ParsedFindInput | null,
   fetchImpl: typeof fetch
-): Promise<ParsedFindInput[]> {
+): Promise<TokenFindingsResult> {
   if (parsed?.kind !== 'ff-url') {
-    return [];
+    return { findings: [] };
   }
   if (parsed.urlKind === 'show') {
     const show = await fetchFeralFileApi<FeralFileShow>(
@@ -60,7 +66,7 @@ async function resolveFeralFileTokensFromApi(
     );
     const seriesIds = (show?.series ?? []).flatMap((series) => (series?.id ? [series.id] : []));
     if (seriesIds.length === 0) {
-      return [];
+      return { findings: [] };
     }
     const results: ParsedFindInput[] = [];
     for (const seriesId of seriesIds) {
@@ -70,7 +76,8 @@ async function resolveFeralFileTokensFromApi(
       );
       results.push(...feralFileArtworkTokens(artworks ?? []));
     }
-    return results;
+    const title = feralFileTitle(show);
+    return { findings: results, ...(title ? { title } : {}) };
   }
   if (parsed.urlKind === 'series') {
     const series = await fetchFeralFileApi<FeralFileSeries>(
@@ -78,15 +85,25 @@ async function resolveFeralFileTokensFromApi(
       fetchImpl
     );
     if (!series?.id) {
-      return [];
+      return { findings: [] };
     }
     const artworks = await fetchFeralFileApi<FeralFileArtwork[]>(
       `/api/artworks?seriesID=${encodeURIComponent(series.id)}`,
       fetchImpl
     );
-    return feralFileArtworkTokens(artworks ?? []);
+    const title = feralFileTitle(series);
+    return { findings: feralFileArtworkTokens(artworks ?? []), ...(title ? { title } : {}) };
   }
-  return [];
+  if (parsed.urlKind === 'artwork') {
+    const artwork = await fetchFeralFileApi<FeralFileArtwork>(
+      `/api/artworks/${encodeURIComponent(parsed.identifier)}`,
+      fetchImpl
+    );
+    const findings = artwork ? feralFileArtworkTokens([artwork]) : [];
+    const title = feralFileTitle(artwork);
+    return { findings, ...(findings.length > 0 && title ? { title } : {}) };
+  }
+  return { findings: [] };
 }
 
 async function fetchFeralFileApi<T>(path: string, fetchImpl: typeof fetch): Promise<T | null> {
@@ -115,4 +132,8 @@ function feralFileArtworkTokens(artworks: readonly FeralFileArtwork[]): ParsedFi
     }
   }
   return results;
+}
+
+function feralFileTitle(value: { title?: string | null; name?: string | null } | null | undefined): string | undefined {
+  return value?.title ?? value?.name ?? undefined;
 }

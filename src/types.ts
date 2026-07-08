@@ -40,11 +40,12 @@ export interface SourceSiteAdapter {
   parseUrl(url: URL): ParsedFindInput;
   extractFromHtml?(url: URL, html: string): ParsedFindInput | null;
   extractTokensFromHtml?(url: URL, html: string): readonly ParsedFindInput[];
+  extractTitleFromHtml?(url: URL, html: string, parsed: ParsedFindInput | null): string | null;
   resolveFromApi?(
     url: URL,
     parsed: ParsedFindInput | null,
     fetchImpl: typeof fetch
-  ): Promise<ParsedFindInput | null>;
+  ): Promise<SingleTokenFindingsResult>;
   resolveTokensFromApi?(
     url: URL,
     parsed: ParsedFindInput | null,
@@ -61,6 +62,14 @@ export type TokenFindingsResult =
   | readonly ParsedFindInput[]
   | {
       findings: readonly ParsedFindInput[];
+      title?: string;
+    };
+
+export type SingleTokenFindingsResult =
+  | ParsedFindInput
+  | null
+  | {
+      finding: ParsedFindInput | null;
       title?: string;
     };
 
