@@ -608,6 +608,20 @@ describe('resolveTokenInfo fallback order', () => {
     });
   });
 
+  test('parsed token URLs use page title metadata when available', async () => {
+    const result = await resolveTokenInfos(`https://www.artblocks.io/token/${ETH_CONTRACT}-5001410`, {
+      fetch: htmlFetch('<html><head><title>Gazers #249 by Matt Kane | Art Blocks</title></head></html>') as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'url');
+    assert.equal(result.title, 'Gazers #249 by Matt Kane | Art Blocks');
+    assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
+  });
+
   test('optional headless renderer runs after static DOM lookup misses', async () => {
     const fetchImpl = async (): Promise<Response> =>
       new Response('<html>client shell only</html>', {

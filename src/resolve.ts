@@ -85,12 +85,13 @@ export async function resolveTokenInfos(
 ): Promise<TokenInfosResolution> {
   const parsed = parseFindInput(input);
   if (parsed?.kind === 'token') {
+    const title = await titleForParsedTokenInput(input, parsed, options.fetch);
     return {
       kind: 'tokens',
       method: 'url',
       source: parsed.source,
       coords: [parsed.coords],
-      title: titleForParsedInput(parsed, null),
+      ...(title ? { title } : {}),
     };
   }
 
@@ -157,6 +158,19 @@ function tokensResolution(
     coords: tokens.map((t) => t.coords),
     ...(title ? { title } : {}),
   };
+}
+
+async function titleForParsedTokenInput(
+  input: string,
+  parsed: Extract<ParsedFindInput, { kind: 'token' }>,
+  fetchImpl: typeof fetch | undefined
+): Promise<string | undefined> {
+  const url = parseUrl(input);
+  if (!url) {
+    return titleForParsedInput(parsed, null);
+  }
+  const html = await fetchStaticHtml(url, fetchImpl);
+  return titleForParsedInput(parsed, html);
 }
 
 /**
