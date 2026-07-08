@@ -1,5 +1,6 @@
 import type { ParsedFindInput } from '../../../types';
 import { sourceTokenResult } from '../../../helpers';
+import { parseSuperRareCollectionContract } from './collection';
 
 const ARTWORK_PATH = /\/artwork\/eth\/(0x[a-fA-F0-9]{40})\/(\d+)/i;
 const STATIC_TOKEN_OBJECT =
@@ -26,7 +27,7 @@ export function extractSuperRareCollectionArtwork(url: URL, html: string): Parse
  * rendered collection artwork links from SuperRare collection pages.
  */
 export function extractSuperRareCollectionArtworks(url: URL, html: string): ParsedFindInput[] {
-  if (!/^\/collection\/0x[a-fA-F0-9]{40}\/?$/.test(url.pathname)) {
+  if (!parseSuperRareCollectionContract(url)) {
     return [];
   }
 

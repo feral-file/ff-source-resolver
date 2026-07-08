@@ -388,6 +388,18 @@ describe('parseFindInput', () => {
     assert.ok(result.reason.includes('/artwork/eth/'));
   });
 
+  test('SuperRare chain-prefixed collection URL remains a collection page marker', () => {
+    const result = parseFindInput(
+      'https://superrare.com/collection/1-0x3e930455dcbf4bc69de9926bdaf8ef782398786f'
+    );
+    assert.equal(result?.kind, 'unsupported');
+    if (result?.kind !== 'unsupported') {
+      throw new Error('narrowing');
+    }
+    assert.ok(result.reason.includes('/collection/1-{contract}'));
+    assert.ok(result.reason.includes('/artwork/eth/'));
+  });
+
   test('Neort art URL parses to neort-art marker', () => {
     const result = parseFindInput('https://neort.io/art/ce3lvgkn70rlpj69ccc0');
     assert.equal(result?.kind, 'neort-art');
@@ -976,6 +988,36 @@ describe('resolveTokenInfos collection support', () => {
         'https://api.superrare.com/graphql',
         'https://api.superrare.com/graphql',
       ]
+    );
+  });
+
+  test('SuperRare chain-prefixed collection resolves through the public API', async () => {
+    const contract = '0x3e930455dcbf4bc69de9926bdaf8ef782398786f';
+    const requests: Array<{ url: string; body: unknown }> = [];
+    const result = await resolveTokenInfos(`https://superrare.com/collection/1-${contract}`, {
+      fetch: superRareCollectionApiFetch('<html>client shell only</html>', requests, [
+        {
+          nfts: [
+            { chainId: '1', contractAddress: contract, tokenId: 7 },
+            { chainId: '1', contractAddress: contract, tokenId: 8 },
+          ],
+          hasNextPage: false,
+        },
+      ]) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract, tokenId: '7' },
+      { chain: 'ethereum', contract, tokenId: '8' },
+    ]);
+    assert.deepEqual(
+      requests.map((request) => request.url),
+      [`https://superrare.com/collection/1-${contract}`, 'https://api.superrare.com/graphql']
     );
   });
 
