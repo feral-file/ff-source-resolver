@@ -1,4 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import { resolveArtBlocksCollectionFromApi } from './pages/api';
 import { parseArtBlocksCollection } from './pages/collection';
 import { extractArtBlocksTokenFromHtml, extractArtBlocksTokensFromHtml } from './pages/html';
 import { parseArtBlocksLegacyProject } from './pages/legacy-project';
@@ -28,5 +29,8 @@ export const artBlocksAdapter: SourceSiteAdapter = {
   },
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     return extractArtBlocksTokensFromHtml(url, html);
+  },
+  async resolveTokensFromApi(url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+    return resolveArtBlocksCollectionFromApi(url, parsed, fetchImpl);
   },
 };
