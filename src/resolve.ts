@@ -99,6 +99,10 @@ export async function resolveTokenInfos(
   const fetched = await fetchStaticHtml(url, options.fetch);
   const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
   if (domTokens.length > 0) {
+    const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
+    if (apiTokens.length > 0) {
+      return tokensResolution('api', apiTokens);
+    }
     return { kind: 'tokens', method: 'dom', source: domTokens[0].source, coords: domTokens.map((t) => t.coords) };
   }
 
@@ -108,24 +112,30 @@ export async function resolveTokenInfos(
       ? normalizeTokenFindings(extractTokenFindings(site, url, rendered))
       : [];
     if (renderedTokens.length > 0) {
-      return {
-        kind: 'tokens',
-        method: 'headless',
-        source: renderedTokens[0].source,
-        coords: renderedTokens.map((t) => t.coords),
-      };
+      const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
+      if (apiTokens.length > 0) {
+        return tokensResolution('api', apiTokens);
+      }
+      return tokensResolution('headless', renderedTokens);
     }
   }
 
   const apiTokens = normalizeTokenFindings(await resolveApiParsedMany(site, url, parsed, options.fetch));
   if (apiTokens.length > 0) {
-    return { kind: 'tokens', method: 'api', source: apiTokens[0].source, coords: apiTokens.map((t) => t.coords) };
+    return tokensResolution('api', apiTokens);
   }
 
   return {
     kind: 'not-found',
     reason: 'Could not extract token information from URL, static DOM, rendered page, or API.',
   };
+}
+
+function tokensResolution(
+  method: 'dom' | 'headless' | 'api',
+  tokens: Array<Extract<ParsedFindInput, { kind: 'token' }>>
+): TokenInfosResolution {
+  return { kind: 'tokens', method, source: tokens[0].source, coords: tokens.map((t) => t.coords) };
 }
 
 /**

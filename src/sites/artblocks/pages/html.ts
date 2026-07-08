@@ -14,6 +14,8 @@ const ART_BLOCKS_METADATA_TOKEN =
   /"chain_id":1[\s\S]{0,160}?"token_id":"(\d+)"[\s\S]{0,500}?"contract_address":"(0x[a-fA-F0-9]{40})"[\s\S]{0,160}?"__typename":"tokens_metadata"/g;
 const ART_BLOCKS_METADATA_TOKEN_ALT =
   /"contract_address":"(0x[a-fA-F0-9]{40})"[\s\S]{0,500}?"token_id":"(\d+)"[\s\S]{0,500}?"chain_id":1[\s\S]{0,160}?"__typename":"tokens_metadata"/g;
+const ART_BLOCKS_METADATA_TOKEN_CONTRACT_AFTER_TYPENAME =
+  /"chain_id":1[\s\S]{0,160}?"token_id":"(\d+)"[\s\S]{0,1200}?"__typename":"tokens_metadata"[\s\S]{0,700}?"contract_address":"(0x[a-fA-F0-9]{40})"/g;
 
 /**
  * extractArtBlocksTokenFromHtml extracts token links only from repeated
@@ -49,19 +51,25 @@ function parseArtBlocksCollectionMarker(url: URL): 'collection' | null {
 }
 
 function extractMetadataTokens(html: string): ParsedFindInput[] {
-  const visible = stripIgnoredHtmlRegions(html);
   const results: ParsedFindInput[] = [];
   ART_BLOCKS_METADATA_TOKEN.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = ART_BLOCKS_METADATA_TOKEN.exec(visible))) {
+  while ((match = ART_BLOCKS_METADATA_TOKEN.exec(html))) {
     const result = sourceTokenResult('artblocks', 'ethereum', match[2], match[1]);
     if (result) {
       results.push(result);
     }
   }
   ART_BLOCKS_METADATA_TOKEN_ALT.lastIndex = 0;
-  while ((match = ART_BLOCKS_METADATA_TOKEN_ALT.exec(visible))) {
+  while ((match = ART_BLOCKS_METADATA_TOKEN_ALT.exec(html))) {
     const result = sourceTokenResult('artblocks', 'ethereum', match[1], match[2]);
+    if (result) {
+      results.push(result);
+    }
+  }
+  ART_BLOCKS_METADATA_TOKEN_CONTRACT_AFTER_TYPENAME.lastIndex = 0;
+  while ((match = ART_BLOCKS_METADATA_TOKEN_CONTRACT_AFTER_TYPENAME.exec(html))) {
+    const result = sourceTokenResult('artblocks', 'ethereum', match[2], match[1]);
     if (result) {
       results.push(result);
     }

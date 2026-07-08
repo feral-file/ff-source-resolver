@@ -748,6 +748,61 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('Art Blocks collection extracts Flight token records when contract follows typename', async () => {
+    const contract = '0xab0000000000aa06f89b268d604a9c1c41524ac6';
+    const html = [
+      '<script>self.__next_f.push([1,"',
+      artBlocksMetadataTokenWithLateContract(contract, '498000016'),
+      artBlocksMetadataTokenWithLateContract(contract, '498000022'),
+      artBlocksMetadataTokenWithLateContract(contract, '498000016'),
+      '"])</script>',
+    ].join('');
+    const result = await resolveTokenInfos('https://www.artblocks.io/collection/while-true-by-lars-wander', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract, tokenId: '498000016' },
+      { chain: 'ethereum', contract, tokenId: '498000022' },
+    ]);
+  });
+
+  test('Art Blocks collection prefers public API tokens over partial Flight payloads', async () => {
+    const contract = '0xab0000000000aa06f89b268d604a9c1c41524ac6';
+    const projectId = `${contract}-498`;
+    const html = [
+      '<script>self.__next_f.push([1,"',
+      artBlocksMetadataTokenWithLateContract(contract, '498000016'),
+      artBlocksMetadataTokenWithLateContract(contract, '498000022'),
+      `{\\"filter_tokens_metadata_by_features_aggregate\\":{\\"aggregate\\":{\\"count\\":60}},`,
+      `\\"project_id\\":\\"${projectId}\\"}`,
+      '"])</script>',
+    ].join('');
+    const result = await resolveTokenInfos('https://www.artblocks.io/collection/while-true-by-lars-wander', {
+      fetch: artBlocksCollectionApiFetch(html, [
+        { chain_id: 1, token_id: '498000000', contract_address: contract },
+        { chain_id: 1, token_id: '498000001', contract_address: contract },
+        { chain_id: 1, token_id: '498000002', contract_address: contract },
+      ]) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract, tokenId: '498000000' },
+      { chain: 'ethereum', contract, tokenId: '498000001' },
+      { chain: 'ethereum', contract, tokenId: '498000002' },
+    ]);
+  });
+
   test('OpenSea collection extracts every scoped Ethereum item', async () => {
     const html = openSeaCollectionItems(
       openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97'),
@@ -1689,6 +1744,39 @@ function artBlocksMetadataToken(contract: string, tokenId: string): string {
     `{"chain_id":1,"token_id":"${tokenId}",` +
     `"contract_address":"${contract}","__typename":"tokens_metadata"}`
   );
+}
+
+function artBlocksMetadataTokenWithLateContract(contract: string, tokenId: string): string {
+  return (
+    `{"id":"${contract}-${tokenId}","chain_id":1,"token_id":"${tokenId}",` +
+    `"live_view_url":"https://generator.artblocks.io/1/${contract}/${tokenId}",` +
+    `"image":{"metadata":{"width":2400},"__typename":"media"},` +
+    `"features":{"Entropy":"Low"},"__typename":"tokens_metadata",` +
+    `"owner":{"__typename":"users"},"contract_address":"${contract}"}`
+  );
+}
+
+function artBlocksCollectionApiFetch(
+  html: string,
+  tokens: Array<{ chain_id: number; token_id: string; contract_address: string }>
+): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://data.artblocks.io/v1/graphql') {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      assert.equal(body.variables?.where?.project_id?._eq, `${tokens[0].contract_address}-498`);
+      assert.equal(body.variables?.where?.chain_id?._eq, 1);
+      return Response.json({
+        data: {
+          filter_tokens_metadata_by_features: tokens,
+        },
+      });
+    }
+    return new Response(html, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' },
+    });
+  };
 }
 
 function fxhashProjectFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
