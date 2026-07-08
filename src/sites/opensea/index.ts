@@ -1,4 +1,5 @@
 import type { ParsedFindInput, SourceSiteAdapter } from '../../types';
+import { resolveOpenSeaCollectionFromApi } from './pages/api';
 import { parseOpenSeaCollection } from './pages/collection';
 import { extractOpenSeaEmbeddedItems, extractOpenSeaEmbeddedItemTokens } from './pages/embedded-items';
 import { parseOpenSeaItem } from './pages/item';
@@ -29,5 +30,8 @@ export const openSeaAdapter: SourceSiteAdapter = {
       return [];
     }
     return extractOpenSeaEmbeddedItemTokens(html);
+  },
+  async resolveTokensFromApi(url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+    return resolveOpenSeaCollectionFromApi(url, parsed, fetchImpl);
   },
 };

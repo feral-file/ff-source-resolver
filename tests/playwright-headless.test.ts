@@ -24,9 +24,9 @@ interface HeadlessFixture {
 
 const HEADLESS_FIXTURES: HeadlessFixture[] = [
   {
-    name: 'Art Blocks collection renders token links client-side',
+    name: 'Art Blocks collection exposes token links statically',
     url: 'https://www.artblocks.io/collection/ringers-by-dmitri-cherniak',
-    expectedMethod: 'headless',
+    expectedMethod: 'dom',
     expectedSource: 'artblocks',
     expectedCoords: {
       chain: 'ethereum',
@@ -42,7 +42,7 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
     expectedCoords: {
       chain: 'ethereum',
       contract: '0xed5af388653567af2f388e6224dc7c4b3241c544',
-      tokenId: '519',
+      tokenId: '326',
     },
   },
   {

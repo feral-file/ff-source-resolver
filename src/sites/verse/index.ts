@@ -4,6 +4,7 @@ import {
   extractVerseSeriesTokenFromHtml,
   extractVerseSeriesTokensFromHtml,
   parseVerseSeries,
+  resolveVerseSeriesFromApi,
 } from './pages/series';
 
 /**
@@ -34,5 +35,8 @@ export const verseAdapter: SourceSiteAdapter = {
       return [];
     }
     return extractVerseSeriesTokensFromHtml(html);
+  },
+  async resolveTokensFromApi(_url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
+    return resolveVerseSeriesFromApi(parsed, fetchImpl);
   },
 };

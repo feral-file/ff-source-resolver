@@ -1,6 +1,7 @@
 import type { ParsedFindInput } from '../../../types';
 import { sourceTokenResult } from '../../../helpers';
 
+const VERSE_GRAPHQL_ENDPOINT = 'https://verse.works/query';
 const VERSE_ITEM_CARD_MARKERS = [
   'virtuoso-grid-item',
   'TabArtworkThumbnail_root',
@@ -10,6 +11,48 @@ const VERSE_ITEM_CARD_MARKERS = [
 const VERSE_CARD_SCOPE_CHARS = 4000;
 const VERSE_ITEM_PATH = /\/items\/ethereum\/(0x[a-fA-F0-9]{40})\/(\d+)/i;
 const HTML_TAG_NAME = /^<([A-Za-z][A-Za-z0-9:-]*)\b/;
+
+const SERIES_EDITIONS_QUERY = `
+  query ResolveVerseSeriesEditions($slug: String!) {
+    collectionsPage(request: { filter: { slugs: [$slug] }, first: 1 }) {
+      nodes {
+        artworks {
+          editions {
+            tokenId
+            contractInfo {
+              chain
+              contractAddress
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+interface VerseSeriesGraphqlResponse {
+  data?: {
+    collectionsPage?: {
+      nodes?: Array<VerseCollection | null> | null;
+    } | null;
+  };
+}
+
+interface VerseCollection {
+  artworks?: Array<VerseArtwork | null> | null;
+}
+
+interface VerseArtwork {
+  editions?: Array<VerseEdition | null> | null;
+}
+
+interface VerseEdition {
+  tokenId?: string | number | null;
+  contractInfo?: {
+    chain?: string | null;
+    contractAddress?: string | null;
+  } | null;
+}
 
 /**
  * parseVerseSeries parses Verse series pages. Static DOM extraction may later
@@ -22,6 +65,49 @@ export function parseVerseSeries(url: URL): ParsedFindInput | null {
     return { kind: 'verse-series', slug: m[1] };
   }
   return null;
+}
+
+/**
+ * resolveVerseSeriesFromApi maps Verse series slugs to every Ethereum edition
+ * coordinate exposed by Verse's public GraphQL API.
+ */
+export async function resolveVerseSeriesFromApi(
+  parsed: ParsedFindInput | null,
+  fetchImpl: typeof fetch
+): Promise<ParsedFindInput[]> {
+  if (parsed?.kind !== 'verse-series') {
+    return [];
+  }
+
+  const response = await fetchImpl(VERSE_GRAPHQL_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query: SERIES_EDITIONS_QUERY,
+      variables: { slug: parsed.slug },
+    }),
+  });
+  if (!response.ok) {
+    return [];
+  }
+
+  const body = (await response.json().catch(() => null)) as VerseSeriesGraphqlResponse | null;
+  const collections = body?.data?.collectionsPage?.nodes ?? [];
+  const results: ParsedFindInput[] = [];
+  for (const collection of collections) {
+    for (const artwork of collection?.artworks ?? []) {
+      for (const edition of artwork?.editions ?? []) {
+        const result = verseEditionToken(edition);
+        if (result) {
+          results.push(result);
+        }
+      }
+    }
+  }
+  return results;
 }
 
 /**
@@ -49,6 +135,15 @@ export function extractVerseSeriesTokensFromHtml(html: string): ParsedFindInput[
     }
   }
   return results;
+}
+
+function verseEditionToken(edition: VerseEdition | null): ParsedFindInput | null {
+  if (edition?.contractInfo?.chain !== 'ETHEREUM') {
+    return null;
+  }
+  const contract = edition.contractInfo.contractAddress ?? '';
+  const tokenId = edition.tokenId == null ? '' : String(edition.tokenId);
+  return contract && tokenId ? sourceTokenResult('verse', 'ethereum', contract, tokenId) : null;
 }
 
 /**
