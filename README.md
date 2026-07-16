@@ -19,6 +19,30 @@ Callers can pass `{ limit: number }` to bound collection resolution; token
 results include `hasMore: true` when the source exposed additional usable token
 coordinates beyond the returned limit.
 
+Artwork playback URLs are available as an opt-in enrichment:
+
+```ts
+const token = await resolveTokenInfo(url, { includeArtworkSource: true });
+if (token.kind === 'token') {
+  console.log(token.source); // Marketplace identity, such as "artblocks".
+  console.log(token.artworkSource); // Browser-loadable artwork URL, when found.
+}
+
+const collection = await resolveTokenInfos(url, { includeArtworkSource: true });
+if (collection.kind === 'tokens') {
+  console.log(collection.artworkSources); // Coordinate-paired artwork URLs.
+}
+```
+
+`includeArtworkSource` is disabled by default because resolving original or
+playable media may require inspecting page content or calling a keyless public
+API, even when token coordinates can be parsed entirely from URL components.
+Collection enrichment can also request substantially more marketplace data.
+Failure to resolve an artwork URL does not discard valid token coordinates;
+`artworkSource` or the corresponding collection finding is simply omitted.
+Raw token coordinates do not identify a marketplace adapter and therefore
+cannot be enriched automatically.
+
 It intentionally keeps secrets, API keys, playlist construction, DP-1 signing,
 and marketplace orchestration outside the package. Those belong in callers or
 server wrappers.
@@ -46,7 +70,9 @@ data:
   the collection slug, id, or KT1 contract.
 - Art Blocks collection pages through the public Art Blocks GraphQL API after
   deriving the collection project id from the page.
-- fxhash project pages through the public GraphQL API.
+- fxhash project pages through the public GraphQL API; direct FX1 tokens use
+  keyless TzKT token metadata because fxhash internal object ids differ from
+  on-chain token ids.
 - Feral File show and series pages through public Feral File APIs.
 - OpenSea collection pages through embedded item JSON or rendered item cards;
   the documented full collection API requires an API key, so it stays outside
@@ -56,8 +82,12 @@ data:
 - Raster artwork collection pages through Raster's public kit API or rendered
   token cards.
 
-Neort playlist pages expose off-chain art IDs rather than token coordinates, so
-they remain outside `resolveTokenInfos`.
+Neort art pages expose off-chain art IDs rather than token coordinates, so they
+remain outside `resolveTokenInfos`. Their keyless page state includes an
+original `resourceFileUrl`, but `includeArtworkSource` intentionally returns
+only coordinate-paired findings after token resolution and therefore cannot
+attach that URL to a Neort art ID. Supporting it requires a separate off-chain
+source-identity result shape rather than synthetic token coordinates.
 
 ## Validation Utilities
 

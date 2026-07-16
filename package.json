@@ -24,7 +24,7 @@
     "build": "tsc",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "npm run test:unit",
-    "test:unit": "npm run build && node --test dist/tests/source-resolver.test.js",
+    "test:unit": "npm run build && node --test dist/tests/*.test.js",
     "test:live": "npm run build && RUN_LIVE_RESOLVER_TESTS=1 node --test dist/tests/live-token-urls.test.js",
     "test:headless": "npm run build && RUN_HEADLESS_RESOLVER_TESTS=1 node --test dist/tests/playwright-headless.test.js",
     "typecheck": "tsc --noEmit",

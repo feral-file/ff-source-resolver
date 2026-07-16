@@ -8,6 +8,7 @@ import { resolveFxhashFromApi, resolveFxhashProjectFromApi } from './pages/api';
 import { parseFxhashGentk } from './pages/gentk';
 import { parseFxhashIteration } from './pages/iteration';
 import { parseFxhashProject } from './pages/project';
+import { resolveFxhashArtworkSources } from './pages/source';
 
 /**
  * fxhashAdapter owns fxhash URL and page extraction rules.
@@ -37,4 +38,5 @@ export const fxhashAdapter: SourceSiteAdapter = {
   async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveFxhashProjectFromApi(parsed, fetchImpl, context);
   },
+  resolveArtworkSources: resolveFxhashArtworkSources,
 };

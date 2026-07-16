@@ -3,6 +3,7 @@ import { resolveArtBlocksCollectionFromApi } from './pages/api';
 import { parseArtBlocksCollection } from './pages/collection';
 import { extractArtBlocksTokenFromHtml, extractArtBlocksTokensFromHtml } from './pages/html';
 import { parseArtBlocksLegacyProject } from './pages/legacy-project';
+import { resolveArtBlocksArtworkSources } from './pages/source';
 import { parseArtBlocksToken } from './pages/token';
 
 /**
@@ -33,4 +34,5 @@ export const artBlocksAdapter: SourceSiteAdapter = {
   async resolveTokensFromApi(url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveArtBlocksCollectionFromApi(url, parsed, fetchImpl, context);
   },
+  resolveArtworkSources: resolveArtBlocksArtworkSources,
 };

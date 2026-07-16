@@ -23,6 +23,14 @@ export function parseRasterArtwork(url: URL): ParsedFindInput | null {
 }
 
 /**
+ * extractRasterArtworkId reads Raster's numeric artwork id from its serialized
+ * page payload. The public kit API uses this id rather than the page slug.
+ */
+export function extractRasterArtworkId(html: string): string | null {
+  return /\\?"artworkId\\?":(\d+)/.exec(html)?.[1] ?? null;
+}
+
+/**
  * extractRasterArtworkTokenFromHtml extracts rendered Raster artwork-card
  * token links from the artwork page only. Raster pages may contain unrelated
  * token paths elsewhere in the document, so token regexes run only inside

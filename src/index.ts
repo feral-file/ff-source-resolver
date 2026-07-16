@@ -10,11 +10,13 @@ export {
   normalizeTokenCoords,
 } from './validation';
 export type {
+  ArtworkSourceFinding,
   FeralFileUrlKind,
   HeadlessPageRenderer,
   IndexerChain,
   MarketplaceSource,
   ParsedFindInput,
+  ResolveArtworkSourcesContext,
   ResolveTokenInfoOptions,
   ResolveTokenInfosOptions,
   SourceSiteAdapter,

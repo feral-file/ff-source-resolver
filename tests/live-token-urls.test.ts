@@ -12,6 +12,15 @@ import { parseFindInput, resolveTokenInfo, resolveTokenInfos } from '../src';
 import type { ParsedFindInput, TokenCoords } from '../src';
 
 const RUN_LIVE = process.env.RUN_LIVE_RESOLVER_TESTS === '1';
+const LIVE_FETCH_ATTEMPTS = 3;
+const LIVE_FETCH_TIMEOUT_MS = 30_000;
+const TRANSIENT_LIVE_STATUSES = new Set([500, 502, 503, 504]);
+
+interface LiveFetchOptions {
+  attempts?: number;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
 
 interface LiveSiteUrlFixture {
   source: string;
@@ -20,6 +29,7 @@ interface LiveSiteUrlFixture {
   requestedUrl?: string;
   acceptedFinalUrls?: string[];
   expected: ExpectedParsedInput;
+  expectedArtworkSource?: RegExp;
   browserNote: string;
 }
 
@@ -66,6 +76,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '9201',
       },
     },
+    expectedArtworkSource: /^https:\/\/ipfs\.io\/ipfs\//,
     browserNote: 'Browser title: Behind Asteroids.',
   },
   {
@@ -74,6 +85,22 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
     url: 'https://objkt.com/tokens/hicetnunc/111068',
     expected: { kind: 'objkt-alias', alias: 'hicetnunc', tokenId: '111068' },
     browserNote: 'Browser title: CSRSNT-XAAI-15-of-32.png.',
+  },
+  {
+    source: 'objkt',
+    page: 'onchfs-token',
+    url: 'https://objkt.com/tokens/KT19etLCjCCzTLFFAxsxLFsVYMRPetr2bTD5/22931',
+    expected: {
+      kind: 'token',
+      source: 'objkt',
+      coords: {
+        chain: 'tezos',
+        contract: 'KT19etLCjCCzTLFFAxsxLFsVYMRPetr2bTD5',
+        tokenId: '22931',
+      },
+    },
+    expectedArtworkSource: /^https:\/\/onchfs\.fxhash2\.xyz\//,
+    browserNote: 'Objkt token with an ONCHFS interactive artifact.',
   },
   {
     source: 'objkt',
@@ -115,6 +142,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '1',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: #1 - Bored Ape Yacht Club | OpenSea.',
   },
   {
@@ -153,6 +181,8 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '13000000',
       },
     },
+    expectedArtworkSource:
+      /^https:\/\/generator\.artblocks\.io\/1\/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270\/13000000$/,
     browserNote: 'Browser title: Ringers #0 by Dmitri Cherniak | Art Blocks.',
   },
   {
@@ -181,28 +211,30 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
   {
     source: 'fxhash',
     page: 'gentk',
-    url: 'https://www.fxhash.xyz/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
-    requestedUrl: 'https://www.fxhash.xyz/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
+    url: 'https://www.fxhash.xyz/iteration/id/FX1-KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE-146207',
+    requestedUrl: 'https://www.fxhash.xyz/gentk/FX1-KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE-146207',
     acceptedFinalUrls: [
-      'https://www.fxhash.xyz/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
-      'https://www.fxhash.xyz/iteration/id/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234',
+      'https://www.fxhash.xyz/gentk/FX1-KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE-146207',
+      'https://www.fxhash.xyz/iteration/id/FX1-KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE-146207',
     ],
     expected: {
       kind: 'token',
       source: 'fxhash',
       coords: {
         chain: 'tezos',
-        contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
-        tokenId: '1234',
+        contract: 'KT1KEa8z6vWXDJrVqtMrAeDVzsvxat3kHaCE',
+        tokenId: '146207',
       },
     },
-    browserNote: 'Browser title: The home of digital art | fxhash.',
+    expectedArtworkSource: /^https:\/\/ipfs\.io\/ipfs\//,
+    browserNote: 'Browser title: Garden, Monoliths #215 by zancan | fxhash.',
   },
   {
     source: 'fxhash',
     page: 'iteration-slug',
     url: 'https://www.fxhash.xyz/iteration/garden-monoliths-215',
     expected: { kind: 'fxhash-iteration', slug: 'garden-monoliths-215' },
+    expectedArtworkSource: /^https:\/\/ipfs\.io\/ipfs\//,
     browserNote: 'Browser title: Garden, Monoliths #215 by zancan | fxhash.',
   },
   {
@@ -233,6 +265,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '1',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Disassociative.',
   },
   {
@@ -270,6 +303,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '139',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Quantizer 139 by Harm van den Dorpel | Verse.',
   },
   {
@@ -300,6 +334,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '95',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Raster token page.',
   },
   {
@@ -311,6 +346,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
       urlKind: 'artwork',
       identifier: 'f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Feral File | Exhibitions.',
   },
   {
@@ -451,6 +487,104 @@ const LIVE_COLLECTION_RESOLUTION_FIXTURES: LiveCollectionResolutionFixture[] = [
   },
 ];
 
+describe('live request retry helper', () => {
+  test('retries a transient response and returns the recovery response', async () => {
+    let calls = 0;
+    const response = await fetchWithTransientRetry('https://example.com/token', {}, {
+      attempts: 2,
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(null, { status: calls === 1 ? 504 : 200 });
+      }) as typeof fetch,
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(response.status, 200);
+  });
+
+  test('retries a transport failure and returns the recovery response', async () => {
+    let calls = 0;
+    const response = await fetchWithTransientRetry('https://example.com/token', {}, {
+      attempts: 2,
+      fetchImpl: (async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new TypeError('temporary connection reset');
+        }
+        return new Response(null, { status: 200 });
+      }) as typeof fetch,
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(response.status, 200);
+  });
+
+  test('returns the final transient response after exhausting attempts', async () => {
+    let calls = 0;
+    const response = await fetchWithTransientRetry('https://example.com/token', {}, {
+      attempts: 2,
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(null, { status: 503 });
+      }) as typeof fetch,
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(response.status, 503);
+  });
+
+  test('does not retry a non-transient response', async () => {
+    let calls = 0;
+    const response = await fetchWithTransientRetry('https://example.com/missing', {}, {
+      attempts: 3,
+      fetchImpl: (async () => {
+        calls += 1;
+        return new Response(null, { status: 404 });
+      }) as typeof fetch,
+    });
+
+    assert.equal(calls, 1);
+    assert.equal(response.status, 404);
+  });
+
+  test('bounds every attempt with a timeout', async () => {
+    let calls = 0;
+    const fetchImpl = (async (
+      _input: string | URL | Request,
+      init?: RequestInit
+    ): Promise<Response> => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      fetchWithTransientRetry('https://example.com/slow', {}, {
+        attempts: 2,
+        timeoutMs: 1,
+        fetchImpl,
+      })
+    );
+    assert.equal(calls, 2);
+  });
+
+  test('requires a successful response for playable artwork media', () => {
+    assert.doesNotThrow(() =>
+      assertPlayableArtworkResponse('example', new Response(null, { status: 200 }))
+    );
+    assert.doesNotThrow(() =>
+      assertPlayableArtworkResponse('example', new Response(null, { status: 206 }))
+    );
+    for (const status of [400, 401, 403, 410, 416]) {
+      assert.throws(
+        () => assertPlayableArtworkResponse('example', new Response(null, { status })),
+        new RegExp(`example artwork source returned ${status}`)
+      );
+    }
+  });
+});
+
 describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
   for (const fixture of LIVE_SITE_URL_FIXTURES) {
     test(`${fixture.source} ${fixture.page}: browsed URL remains reachable`, async () => {
@@ -484,13 +618,36 @@ describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
       assert.equal(result.method, 'url');
       assert.deepEqual(result.coords, fixture.expected.coords);
     });
+
+    if (fixture.expectedArtworkSource) {
+      test(`${fixture.source} ${fixture.page}: opt-in artwork source remains playable`, async () => {
+        const result = await resolveTokenInfos(fixture.url, {
+          fetch: liveResolverFetch,
+          includeArtworkSource: true,
+        });
+        assert.equal(result.kind, 'tokens', fixture.browserNote);
+        if (result.kind !== 'tokens') {
+          throw new Error('narrowing');
+        }
+        assert.ok(result.artworkSources?.length, `${fixture.source} returned no artwork source`);
+        for (const finding of result.artworkSources ?? []) {
+          assert.match(finding.artworkSource, fixture.expectedArtworkSource!);
+          const response = await fetchArtworkSource(finding.artworkSource);
+          try {
+            assertPlayableArtworkResponse(fixture.source, response);
+          } finally {
+            await response.body?.cancel().catch(() => undefined);
+          }
+        }
+      });
+    }
   }
 });
 
 describe('live collection resolution fixtures', { skip: !RUN_LIVE }, () => {
   for (const fixture of LIVE_COLLECTION_RESOLUTION_FIXTURES) {
     test(`${fixture.source} ${fixture.page}: resolveTokenInfos returns real collection tokens`, async () => {
-      const result = await resolveTokenInfos(fixture.url);
+      const result = await resolveTokenInfos(fixture.url, { fetch: liveResolverFetch });
 
       assert.equal(result.kind, 'tokens', fixture.browserNote);
       if (result.kind !== 'tokens') {
@@ -536,7 +693,7 @@ describe('live collection resolution fixtures', { skip: !RUN_LIVE }, () => {
  * still expose useful URL-drift regressions for the resolver fixtures.
  */
 async function fetchTokenPage(url: string): Promise<Response> {
-  return fetch(url, {
+  return fetchWithTransientRetry(url, {
     headers: {
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'en-US,en;q=0.9',
@@ -546,6 +703,69 @@ async function fetchTokenPage(url: string): Promise<Response> {
     },
     redirect: 'follow',
   });
+}
+
+/**
+ * fetchArtworkSource checks that a resolved source reaches browser media while
+ * requesting only an initial byte where the upstream supports range requests.
+ */
+async function fetchArtworkSource(url: string): Promise<Response> {
+  return fetchWithTransientRetry(url, {
+    headers: {
+      Accept: 'text/html,video/*,audio/*,image/*,*/*;q=0.8',
+      Range: 'bytes=0-0',
+    },
+    redirect: 'follow',
+  });
+}
+
+/**
+ * liveResolverFetch gives resolver-owned page and API requests the same bounded
+ * transient-failure handling as direct live reachability probes.
+ */
+const liveResolverFetch = ((
+  input: string | URL | Request,
+  init?: RequestInit
+): Promise<Response> => fetchWithTransientRetry(input, init ?? {})) as typeof fetch;
+
+function assertPlayableArtworkResponse(source: string, response: Response): void {
+  assert.ok(response.ok, `${source} artwork source returned ${response.status}`);
+}
+
+/**
+ * fetchWithTransientRetry bounds live network probes and retries only failures
+ * that can recover without hiding deterministic URL drift such as a 404.
+ */
+async function fetchWithTransientRetry(
+  input: string | URL | Request,
+  init: RequestInit,
+  options: LiveFetchOptions = {}
+): Promise<Response> {
+  const attempts = options.attempts ?? LIVE_FETCH_ATTEMPTS;
+  const timeoutMs = options.timeoutMs ?? LIVE_FETCH_TIMEOUT_MS;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(input, { ...init, signal: controller.signal });
+      if (!TRANSIENT_LIVE_STATUSES.has(response.status) || attempt === attempts) {
+        return response;
+      }
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) {
+        throw error;
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Live fetch attempts exhausted.');
 }
 
 /**

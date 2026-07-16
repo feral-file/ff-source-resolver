@@ -7,10 +7,12 @@ import type {
 import { sourceTokenResult } from '../../helpers';
 import { limitTokenFindings, tokenLimitTarget } from '../../limits';
 import {
+  extractRasterArtworkId,
   extractRasterArtworkTokenFromHtml,
   extractRasterArtworkTokensFromHtml,
   parseRasterArtwork,
 } from './pages/artwork';
+import { resolveRasterArtworkSources } from './pages/source';
 import { parseRasterToken } from './pages/token';
 
 const RASTER_PAGE_HEADERS = {
@@ -45,6 +47,7 @@ export const rasterAdapter: SourceSiteAdapter = {
   async resolveTokensFromApi(url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveRasterArtworkTokensFromApi(url, parsed, fetchImpl, context);
   },
+  resolveArtworkSources: resolveRasterArtworkSources,
 };
 
 interface RasterTokenPage {
@@ -125,10 +128,6 @@ async function resolveRasterArtworkTokensFromApi(
     findings: limitTokenFindings(results, context?.limit),
     ...(hasMore ? { hasMore } : {}),
   };
-}
-
-function extractRasterArtworkId(html: string): string | null {
-  return /\\?"artworkId\\?":(\d+)/.exec(html)?.[1] ?? null;
 }
 
 function rasterApiToken(token: NonNullable<RasterTokenPage['tokens']>[number]): ParsedFindInput | null {
