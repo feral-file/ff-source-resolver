@@ -4,6 +4,7 @@ import { resolveRasterArtworkSources } from '../src/sites/raster/pages/source';
 import type { TokenCoords } from '../src/types';
 
 const CONTRACT = '0xf5705202462f066ac55c293f5798ae027b2f27b5';
+const TEZOS_CONTRACT = 'KT19etLCjCCzTLFFAxsxLFsVYMRPetr2bTD5';
 
 describe('Raster artwork source enrichment', () => {
   test('prefers original token content from the keyless detail endpoint', async () => {
@@ -131,6 +132,112 @@ describe('Raster artwork source enrichment', () => {
       findings[0]?.artworkSource,
       'https://bits.raster.art/abcd/abcdef1234567890/1500.avif'
     );
+  });
+
+  test('stops pagination after finding a requested token without playable metadata', async () => {
+    const coords = ethereumCoords('95');
+    let requests = 0;
+    const fetchImpl = async (): Promise<Response> => {
+      requests += 1;
+      return Response.json({
+        tokens: [
+          {
+            chain_id: 'eip155:1',
+            contract_address: CONTRACT,
+            token_id: '95',
+            metadata: null,
+          },
+        ],
+        cursor: 2,
+      });
+    };
+
+    const findings = await resolveRasterArtworkSources(
+      new URL('https://raster.art/artwork/split-logic-by-ricky-retouch'),
+      [coords],
+      fetchImpl as typeof fetch,
+      { html: '<script>{"artworkId":2886465}</script>' }
+    );
+
+    assert.equal(requests, 1);
+    assert.deepEqual(findings, []);
+  });
+
+  test('never mixes hashes and types from different Raster media pairs', async () => {
+    const coords = ethereumCoords('95');
+    const fetchImpl = rasterFetch({
+      [`https://kit.raster.art/token/ethereum/${CONTRACT}/95`]: {
+        metadata: {
+          media_hash: 'aaaaaaaaaaaaaaaa',
+          preview_type: 'video/2',
+        },
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(`https://raster.art/token/ethereum/${CONTRACT}/95`),
+      [coords],
+      fetchImpl
+    );
+
+    assert.deepEqual(findings, []);
+  });
+
+  test('uses a complete preview pair when the media pair is incomplete', async () => {
+    const coords = ethereumCoords('95');
+    const fetchImpl = rasterFetch({
+      [`https://kit.raster.art/token/ethereum/${CONTRACT}/95`]: {
+        metadata: {
+          media_hash: 'aaaaaaaaaaaaaaaa',
+          preview_hash: 'bbbbbbbbbbbbbbbb',
+          preview_type: 'image/2',
+        },
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(`https://raster.art/token/ethereum/${CONTRACT}/95`),
+      [coords],
+      fetchImpl
+    );
+
+    assert.equal(
+      findings[0]?.artworkSource,
+      'https://bits.raster.art/bbbb/bbbbbbbbbbbbbbbb/7200.avif'
+    );
+  });
+
+  test('does not pair differently cased Tezos contracts', async () => {
+    const coords: TokenCoords = {
+      chain: 'tezos',
+      contract: TEZOS_CONTRACT,
+      tokenId: '22931',
+    };
+    const fetchImpl = rasterFetch({
+      'https://kit.raster.art/artwork/2886465/tokens?cursor=0&page_size=100&sort=listing&sort_direction=asc': {
+        tokens: [
+          {
+            chain_id: 'tezos:NetXdQprcVkpaWU',
+            contract_address: TEZOS_CONTRACT.toLowerCase(),
+            token_id: coords.tokenId,
+            metadata: {
+              preview_hash: 'bbbbbbbbbbbbbbbb',
+              preview_type: 'image/2',
+            },
+          },
+        ],
+        cursor: 1,
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL('https://raster.art/artwork/split-logic-by-ricky-retouch'),
+      [coords],
+      fetchImpl,
+      { html: '<script>{"artworkId":2886465}</script>' }
+    );
+
+    assert.deepEqual(findings, []);
   });
 });
 

@@ -229,5 +229,8 @@ function artworkCoordsKey(artwork: FeralFileArtworkSourceRecord): string | null 
 }
 
 function coordsKey(coords: TokenCoords): string {
-  return `${coords.chain}:${coords.contract.toLowerCase()}:${coords.tokenId}`;
+  // Ethereum hex addresses are case-insensitive after validation, while Tezos
+  // Base58 contracts must retain their exact casing.
+  const contract = coords.chain === 'ethereum' ? coords.contract.toLowerCase() : coords.contract;
+  return `${coords.chain}:${contract}:${coords.tokenId}`;
 }

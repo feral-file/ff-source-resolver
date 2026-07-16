@@ -8,6 +8,11 @@ const ETH_COORDS: TokenCoords = {
   contract: '0xABCDEFabcdef1234567890ABCDEFabcdef123456',
   tokenId: '101',
 };
+const TEZOS_COORDS: TokenCoords = {
+  chain: 'tezos',
+  contract: 'KT19etLCjCCzTLFFAxsxLFsVYMRPetr2bTD5',
+  tokenId: '22931',
+};
 
 describe('Feral File artwork source enrichment', () => {
   test('resolves a relative interactive preview without requesting its thumbnail', async () => {
@@ -133,6 +138,31 @@ describe('Feral File artwork source enrichment', () => {
       findings[0]?.artworkSource,
       'https://cdn.feralfileassets.com/previews/series-id/version/_unique-previews/8/'
     );
+  });
+
+  test('does not pair differently cased Tezos contracts', async () => {
+    const fetchImpl = feralFileFetch({
+      'https://feralfile.com/api/series/tezos-series': {
+        id: 'tezos-series',
+        medium: 'software',
+      },
+      'https://feralfile.com/api/artworks?seriesID=tezos-series': [
+        {
+          chain: 'tezos',
+          contractAddress: TEZOS_COORDS.contract.toLowerCase(),
+          tokenID: TEZOS_COORDS.tokenId,
+          previewURI: 'previews/wrong-token/index.html',
+        },
+      ],
+    });
+
+    const findings = await resolveFeralFileArtworkSources(
+      new URL('https://feralfile.com/exhibitions/series/tezos-series'),
+      [TEZOS_COORDS],
+      fetchImpl
+    );
+
+    assert.deepEqual(findings, []);
   });
 });
 

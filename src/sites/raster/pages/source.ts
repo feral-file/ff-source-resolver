@@ -110,10 +110,12 @@ async function fetchRasterArtworkSources(
     for (const token of tokens) {
       const key = rasterTokenKey(token);
       const requested = key ? remaining.get(key) : undefined;
-      const artworkSource = mediaSource(token.metadata);
-      if (key && requested && artworkSource) {
-        results.set(key, { coords: requested, artworkSource });
+      if (key && requested) {
         remaining.delete(key);
+        const artworkSource = mediaSource(token.metadata);
+        if (artworkSource) {
+          results.set(key, { coords: requested, artworkSource });
+        }
       }
     }
 
@@ -157,9 +159,9 @@ function mediaSource(metadata: RasterMediaMetadata | null | undefined): string |
   if (original) {
     return original;
   }
-  return rasterPreviewUrl(
-    metadata?.media_hash ?? metadata?.preview_hash,
-    metadata?.media_type ?? metadata?.preview_type
+  return (
+    rasterPreviewUrl(metadata?.media_hash, metadata?.media_type) ??
+    rasterPreviewUrl(metadata?.preview_hash, metadata?.preview_type)
   );
 }
 
@@ -237,5 +239,8 @@ function requestedCoords(coords: readonly TokenCoords[]): Map<string, TokenCoord
 }
 
 function coordsKey(coords: TokenCoords): string {
-  return `${coords.chain}:${coords.contract.toLowerCase()}:${coords.tokenId}`;
+  // Ethereum hex addresses are case-insensitive after validation, while Tezos
+  // Base58 contracts must retain their exact casing.
+  const contract = coords.chain === 'ethereum' ? coords.contract.toLowerCase() : coords.contract;
+  return `${coords.chain}:${contract}:${coords.tokenId}`;
 }

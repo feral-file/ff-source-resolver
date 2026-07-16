@@ -43,19 +43,21 @@ describe('fxhash artwork source enrichment', () => {
     ]);
   });
 
-  test('maps project IPFS, ONCHFS, and direct HTTPS artifacts to their tokens', async () => {
+  test('maps project IPFS, Arweave, ONCHFS, and direct HTTPS artifacts to their tokens', async () => {
     const coords: TokenCoords[] = [
       LEGACY_COORDS,
       { chain: 'tezos', contract: 'KT1Project', tokenId: '2' },
       { chain: 'tezos', contract: 'KT1Project', tokenId: '3' },
+      { chain: 'tezos', contract: 'KT1Project', tokenId: '4' },
     ];
     const fetchImpl = graphqlFetch(() => ({
       data: {
         generativeToken: {
           entireCollection: [
-            objkt(coords[0], 'ipfs://QmProjectArtifact'),
-            objkt(coords[1], 'onchfs://abcdef/index.html?fxhash=ooHash'),
-            objkt(coords[2], 'https://cdn.example/artwork/index.html'),
+            objkt(coords[0], 'ipfs://ipfs/QmProjectArtifact'),
+            objkt(coords[1], 'ar://arweave-transaction/index.html'),
+            objkt(coords[2], 'onchfs://abcdef/index.html?fxhash=ooHash'),
+            objkt(coords[3], 'https://cdn.example/artwork/index.html'),
           ],
         },
       },
@@ -71,27 +73,32 @@ describe('fxhash artwork source enrichment', () => {
       findings.map(({ artworkSource }) => artworkSource),
       [
         'https://ipfs.io/ipfs/QmProjectArtifact',
+        'https://arweave.net/arweave-transaction/index.html',
         'https://onchfs.fxhash2.xyz/abcdef/index.html?fxhash=ooHash',
         'https://cdn.example/artwork/index.html',
       ]
     );
   });
 
-  test('queries both fxhash ObjktId versions for a direct gentk URL', async () => {
-    const coords: TokenCoords = {
-      chain: 'tezos',
-      contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
-      tokenId: '1234',
+  test('looks up a direct gentk by its contract and on-chain token id', async () => {
+    const coords = LEGACY_COORDS;
+    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
+      assert.equal(
+        input.toString(),
+        `https://api.tzkt.io/v1/tokens?contract=${coords.contract}&tokenId=${coords.tokenId}&limit=1`
+      );
+      return Response.json([
+        {
+          tokenId: coords.tokenId,
+          contract: { address: coords.contract },
+          metadata: { artifactUri: 'ipfs://QmDirectGentk' },
+        },
+      ]);
     };
-    const fetchImpl = graphqlFetch((request) => {
-      assert.deepEqual(request.variables.ids, ['FX0-1234', 'FX1-1234']);
-      assert.equal(request.variables.take, 2);
-      return { data: { objkts: [objkt(coords, 'ipfs://QmDirectGentk')] } };
-    });
 
     const findings = await resolveFxhashArtworkSources(
       new URL(
-        'https://www.fxhash.xyz/gentk/FX1-KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi-1234'
+        `https://www.fxhash.xyz/gentk/FX1-${coords.contract}-${coords.tokenId}`
       ),
       [coords],
       fetchImpl as typeof fetch

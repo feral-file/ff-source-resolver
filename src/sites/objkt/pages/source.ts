@@ -3,7 +3,8 @@ import type { ArtworkSourceFinding, TokenCoords } from '../../../types';
 const OBJKT_GRAPHQL_ENDPOINT = 'https://data.objkt.com/v3/graphql';
 const OBJKT_SOURCE_BATCH_SIZE = 100;
 const OBJKT_IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
-const OBJKT_ASSET_CDN = 'https://assets.objkt.media/file/assets-003/';
+const OBJKT_ARWEAVE_GATEWAY = 'https://arweave.net/';
+const ONCHFS_GATEWAY = 'https://onchfs.fxhash2.xyz/';
 
 const TOKEN_ARTWORK_SOURCE_QUERY = `
   query ResolveObjktArtworkSources($where: token_bool_exp!, $limit: Int!) {
@@ -104,7 +105,7 @@ async function fetchObjktArtworkSourceBatch(
 
 /**
  * playableObjktUri converts Objkt's storage schemes to the browser-loadable
- * gateways used by its web client while preserving ordinary web and data URLs.
+ * gateways used by its web client while preserving ordinary HTTP(S) URLs.
  */
 function playableObjktUri(...candidates: Array<string | null | undefined>): string | null {
   for (const candidate of candidates) {
@@ -112,7 +113,7 @@ function playableObjktUri(...candidates: Array<string | null | undefined>): stri
     if (!uri) {
       continue;
     }
-    if (/^(?:https?:|data:)/i.test(uri)) {
+    if (/^https?:/i.test(uri)) {
       return uri;
     }
     if (/^ipfs:\/\//i.test(uri)) {
@@ -124,7 +125,13 @@ function playableObjktUri(...candidates: Array<string | null | undefined>): stri
     if (/^onchfs:\/\//i.test(uri)) {
       const path = uri.replace(/^onchfs:\/\//i, '').replace(/^\/+/, '');
       if (path) {
-        return `${OBJKT_ASSET_CDN}${path}`;
+        return `${ONCHFS_GATEWAY}${path}`;
+      }
+    }
+    if (/^ar:\/\//i.test(uri)) {
+      const path = uri.replace(/^ar:\/\//i, '').replace(/^\/+/, '');
+      if (path) {
+        return `${OBJKT_ARWEAVE_GATEWAY}${path}`;
       }
     }
   }

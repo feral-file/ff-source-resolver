@@ -205,22 +205,39 @@ function findEmbeddedOriginalMedia(
     }
     offset = tokenIndex + needle.length;
 
-    const scope = html.slice(offset, offset + EMBEDDED_TOKEN_SCAN_CHARS);
-    const metadataIndex = scope.indexOf('"metadata":');
-    if (metadataIndex < 0 || metadataIndex > 500) {
+    const nft = containingEmbeddedNft(html, tokenIndex, universalTokenId);
+    const original = nft?.metadata?.mediaDetails?.original;
+    if (original) {
+      return original;
+    }
+  }
+  return null;
+}
+
+/**
+ * containingEmbeddedNft parses the nearest complete JSON object that owns the
+ * matched universal token id, preventing a forward scan from crossing into a
+ * neighboring NFT record when metadata is absent.
+ */
+function containingEmbeddedNft(
+  html: string,
+  tokenIndex: number,
+  universalTokenId: string
+): SuperRareApiNft | null {
+  const scanStart = Math.max(0, tokenIndex - EMBEDDED_TOKEN_SCAN_CHARS);
+  for (let objectStart = tokenIndex; objectStart >= scanStart; objectStart -= 1) {
+    if (html[objectStart] !== '{') {
       continue;
     }
-    const originalIndex = scope.indexOf('"original":', metadataIndex);
-    if (originalIndex < 0) {
-      continue;
-    }
-    const objectStart = scope.indexOf('{', originalIndex);
-    const objectJson = objectStart < 0 ? null : extractJsonObject(scope, objectStart);
+    const objectJson = extractJsonObject(html, objectStart);
     if (!objectJson) {
       continue;
     }
     try {
-      return JSON.parse(objectJson) as SuperRareOriginalMedia;
+      const nft = JSON.parse(objectJson) as SuperRareApiNft & { universalTokenId?: unknown };
+      if (nft.universalTokenId === universalTokenId) {
+        return nft;
+      }
     } catch {
       continue;
     }
@@ -294,12 +311,12 @@ function browserUrl(uri: string | null | undefined): string | null {
   if (!value) {
     return null;
   }
-  if (value.startsWith('ipfs://')) {
-    const resource = value.slice('ipfs://'.length);
+  if (/^ipfs:\/\//i.test(value)) {
+    const resource = value.replace(/^ipfs:\/\/(?:ipfs\/)?/i, '').replace(/^\/+/, '');
     return resource ? `https://ipfs.io/ipfs/${resource}` : null;
   }
-  if (value.startsWith('ar://')) {
-    const resource = value.slice('ar://'.length);
+  if (/^ar:\/\//i.test(value)) {
+    const resource = value.replace(/^ar:\/\//i, '').replace(/^\/+/, '');
     return resource ? `https://arweave.net/${resource}` : null;
   }
   try {

@@ -127,8 +127,8 @@ class PlaywrightRenderer implements HeadlessPageRenderer {
 
   /**
    * render loads a page in Chromium and returns the rendered DOM. The fixed
-   * wait after DOM content handles SPA routes that populate token links after
-   * hydration without forcing every site to reach network-idle.
+   * readiness selectors keep SPA fixtures bounded while waiting for the token
+   * links their site adapter is expected to inspect.
    */
   async render(url: string): Promise<string | null> {
     const page = await this.browser.newPage({
@@ -139,7 +139,11 @@ class PlaywrightRenderer implements HeadlessPageRenderer {
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+      const readySelector = renderedTokenReadySelector(url);
+      if (readySelector) {
+        await page.waitForSelector(readySelector, { state: 'attached', timeout: 30000 });
+      }
+      await page.waitForTimeout(500);
       return await page.content();
     } catch {
       return null;
@@ -147,6 +151,24 @@ class PlaywrightRenderer implements HeadlessPageRenderer {
       await page.close();
     }
   }
+}
+
+/**
+ * renderedTokenReadySelector identifies the token-link shape each client-side
+ * fixture must expose before its rendered DOM is useful to the resolver.
+ */
+function renderedTokenReadySelector(value: string): string | null {
+  const url = new URL(value);
+  if (url.hostname === 'superrare.com') {
+    return 'a[href*="/artwork/eth/"]';
+  }
+  if (url.hostname === 'verse.works') {
+    return 'a[href*="/items/ethereum/"]';
+  }
+  if (url.hostname === 'raster.art' || url.hostname === 'www.raster.art') {
+    return 'a[href*="/token/ethereum/"], a[href*="/token/tezos/"]';
+  }
+  return null;
 }
 
 /**

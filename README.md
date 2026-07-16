@@ -70,7 +70,9 @@ data:
   the collection slug, id, or KT1 contract.
 - Art Blocks collection pages through the public Art Blocks GraphQL API after
   deriving the collection project id from the page.
-- fxhash project pages through the public GraphQL API.
+- fxhash project pages through the public GraphQL API; direct FX1 tokens use
+  keyless TzKT token metadata because fxhash internal object ids differ from
+  on-chain token ids.
 - Feral File show and series pages through public Feral File APIs.
 - OpenSea collection pages through embedded item JSON or rendered item cards;
   the documented full collection API requires an API key, so it stays outside
