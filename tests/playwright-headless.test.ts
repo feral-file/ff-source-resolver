@@ -20,6 +20,7 @@ interface HeadlessFixture {
   expectedMethod: 'dom' | 'headless';
   expectedSource: string;
   expectedCoords: TokenCoords;
+  expectedArtworkSource: RegExp;
 }
 
 const HEADLESS_FIXTURES: HeadlessFixture[] = [
@@ -33,6 +34,7 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
       contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
       tokenId: '13000116',
     },
+    expectedArtworkSource: /^https:\/\/generator\.artblocks\.io\//,
   },
   {
     name: 'OpenSea collection exposes embedded token JSON statically',
@@ -42,8 +44,9 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
     expectedCoords: {
       chain: 'ethereum',
       contract: '0xed5af388653567af2f388e6224dc7c4b3241c544',
-      tokenId: '326',
+      tokenId: '63',
     },
+    expectedArtworkSource: /^https:\/\//,
   },
   {
     name: 'SuperRare collection renders artwork links client-side',
@@ -55,6 +58,7 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
       contract: '0x3e930455dcbf4bc69de9926bdaf8ef782398786f',
       tokenId: '7',
     },
+    expectedArtworkSource: /^https:\/\//,
   },
   {
     name: 'Verse series renders item links client-side',
@@ -64,8 +68,9 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
     expectedCoords: {
       chain: 'ethereum',
       contract: '0x23b72f7458a204446983f544d655df10f70533e9',
-      tokenId: '216',
+      tokenId: '178',
     },
+    expectedArtworkSource: /^https:\/\//,
   },
   {
     name: 'Raster artwork renders token links client-side',
@@ -77,6 +82,7 @@ const HEADLESS_FIXTURES: HeadlessFixture[] = [
       contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
       tokenId: '95',
     },
+    expectedArtworkSource: /^https:\/\//,
   },
 ];
 
@@ -96,7 +102,10 @@ describe('Playwright headless resolver fixtures', { skip: !RUN_HEADLESS }, () =>
   for (const fixture of HEADLESS_FIXTURES) {
     test(fixture.name, async () => {
       const staticResult = await resolveTokenInfo(fixture.url);
-      const renderedResult = await resolveTokenInfo(fixture.url, { renderer });
+      const renderedResult = await resolveTokenInfo(fixture.url, {
+        renderer,
+        includeArtworkSource: true,
+      });
 
       if (fixture.expectedMethod === 'headless') {
         assert.equal(staticResult.kind, 'not-found');
@@ -108,6 +117,7 @@ describe('Playwright headless resolver fixtures', { skip: !RUN_HEADLESS }, () =>
       assert.equal(renderedResult.method, fixture.expectedMethod);
       assert.equal(renderedResult.source, fixture.expectedSource);
       assertTokenCoords(renderedResult.coords, fixture.expectedCoords);
+      assert.match(renderedResult.artworkSource ?? '', fixture.expectedArtworkSource);
     });
   }
 });

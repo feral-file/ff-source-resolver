@@ -6,6 +6,7 @@ import {
   extractSuperRareCollectionArtwork,
   extractSuperRareCollectionArtworks,
 } from './pages/extract-html';
+import { resolveSuperRareArtworkSources } from './pages/source';
 
 /**
  * superRareAdapter owns SuperRare URL and page extraction rules.
@@ -34,4 +35,5 @@ export const superRareAdapter: SourceSiteAdapter = {
   async resolveTokensFromApi(url, _parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveSuperRareCollectionFromApi(url, fetchImpl, context);
   },
+  resolveArtworkSources: resolveSuperRareArtworkSources,
 };

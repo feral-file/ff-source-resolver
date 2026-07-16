@@ -637,6 +637,78 @@ describe('resolveTokenInfo fallback order', () => {
     assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '5001410' }]);
   });
 
+  test('artwork source enrichment is opt-in for token URLs', async () => {
+    const input =
+      'https://www.artblocks.io/token/1/' +
+      '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/163000100';
+
+    const basic = await resolveTokenInfo(input);
+    assert.equal(basic.kind, 'token');
+    if (basic.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal('artworkSource' in basic, false);
+
+    const enriched = await resolveTokenInfo(input, { includeArtworkSource: true });
+    assert.equal(enriched.kind, 'token');
+    if (enriched.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(
+      enriched.artworkSource,
+      'https://generator.artblocks.io/1/' +
+        '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/163000100'
+    );
+  });
+
+  test('plural token resolution pairs opt-in artwork sources with coordinates', async () => {
+    const input =
+      'https://www.artblocks.io/token/1/' +
+      '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/163000100';
+    const result = await resolveTokenInfos(input, { includeArtworkSource: true });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.artworkSources, [
+      {
+        coords: {
+          chain: 'ethereum',
+          contract: '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270',
+          tokenId: '163000100',
+        },
+        artworkSource:
+          'https://generator.artblocks.io/1/' +
+          '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270/163000100',
+      },
+    ]);
+  });
+
+  test('artwork source API failures preserve resolved token coordinates', async () => {
+    const input = `https://objkt.com/tokens/${TEZOS_CONTRACT}/9201`;
+    let requests = 0;
+    const result = await resolveTokenInfo(input, {
+      includeArtworkSource: true,
+      fetch: (async () => {
+        requests += 1;
+        return new Response(null, { status: 503 });
+      }) as typeof fetch,
+    });
+
+    assert.equal(requests, 1);
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.coords, {
+      chain: 'tezos',
+      contract: TEZOS_CONTRACT,
+      tokenId: '9201',
+    });
+    assert.equal('artworkSource' in result, false);
+  });
+
   test('optional headless renderer runs after static DOM lookup misses', async () => {
     const fetchImpl = async (): Promise<Response> =>
       new Response('<html>client shell only</html>', {
@@ -839,6 +911,7 @@ describe('resolveTokenInfos collection support', () => {
     ].join('');
     const result = await resolveTokenInfos('https://www.artblocks.io/collection/screens-by-thomas-lin-pedersen', {
       fetch: htmlFetch(html) as typeof fetch,
+      includeArtworkSource: true,
     });
 
     assert.equal(result.kind, 'tokens');
@@ -850,6 +923,40 @@ describe('resolveTokenInfos collection support', () => {
     assert.deepEqual(result.coords, [
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000641' },
       { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000642' },
+    ]);
+    assert.deepEqual(
+      result.artworkSources?.map(({ artworkSource }) => artworkSource),
+      [
+        `https://generator.artblocks.io/1/${ETH_CONTRACT}/255000641`,
+        `https://generator.artblocks.io/1/${ETH_CONTRACT}/255000642`,
+      ]
+    );
+  });
+
+  test('collection limits artwork source enrichment to returned tokens', async () => {
+    const html = [
+      artBlocksMetadataToken(ETH_CONTRACT, '255000641'),
+      artBlocksMetadataToken(ETH_CONTRACT, '255000642'),
+    ].join('');
+    const result = await resolveTokenInfos('https://www.artblocks.io/collection/screens-by-thomas-lin-pedersen', {
+      fetch: htmlFetch(html) as typeof fetch,
+      includeArtworkSource: true,
+      limit: 1,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.hasMore, true);
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000641' },
+    ]);
+    assert.deepEqual(result.artworkSources, [
+      {
+        coords: { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '255000641' },
+        artworkSource: `https://generator.artblocks.io/1/${ETH_CONTRACT}/255000641`,
+      },
     ]);
   });
 

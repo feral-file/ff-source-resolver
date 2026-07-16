@@ -2,11 +2,14 @@ import { normalizeParsedFindInput, normalizeParsedFindInputs } from './helpers';
 import { parseFindInput } from './parse';
 import { matchSite } from './site-utils';
 import { siteAdapters } from './sites';
+import { normalizeTokenCoords } from './validation';
 import type {
+  ArtworkSourceFinding,
   ParsedFindInput,
   ResolveTokenInfoOptions,
   ResolveTokenInfosOptions,
   SingleTokenFindingsResult,
+  TokenCoords,
   TokenInfoResolution,
   TokenInfoResolutionMethod,
   TokenFindingsResult,
@@ -24,6 +27,8 @@ import type {
  *
  * The library does not own headless browser infrastructure or secrets; callers
  * provide those adapters when they want rendered-page inspection.
+ * Set includeArtworkSource to opt into a later page/API enrichment pass for a
+ * browser-loadable artwork URL.
  */
 export async function resolveTokenInfo(
   input: string,
@@ -31,7 +36,9 @@ export async function resolveTokenInfo(
 ): Promise<TokenInfoResolution> {
   const parsed = parseFindInput(input);
   if (parsed?.kind === 'token') {
-    return { kind: 'token', method: 'url', source: parsed.source, coords: parsed.coords };
+    const url = parseUrl(input);
+    const site = url ? matchSite(url, siteAdapters) : null;
+    return tokenResolution('url', parsed, options, url, site);
   }
 
   const url = parseUrl(input);
@@ -47,7 +54,7 @@ export async function resolveTokenInfo(
   if (fetched) {
     const domParsed = normalizeParsedFindInput(site.extractFromHtml(url, fetched));
     if (domParsed?.kind === 'token') {
-      return { kind: 'token', method: 'dom', source: domParsed.source, coords: domParsed.coords };
+      return tokenResolution('dom', domParsed, options, url, site, fetched);
     }
   }
 
@@ -56,19 +63,14 @@ export async function resolveTokenInfo(
     if (rendered) {
       const renderedParsed = normalizeParsedFindInput(site.extractFromHtml(url, rendered));
       if (renderedParsed?.kind === 'token') {
-        return {
-          kind: 'token',
-          method: 'headless',
-          source: renderedParsed.source,
-          coords: renderedParsed.coords,
-        };
+        return tokenResolution('headless', renderedParsed, options, url, site, rendered);
       }
     }
   }
 
   const apiParsed = await resolveApiParsed(site, url, parsed, options.fetch);
   if (apiParsed?.kind === 'token') {
-    return { kind: 'token', method: 'api', source: apiParsed.source, coords: apiParsed.coords };
+    return tokenResolution('api', apiParsed, options, url, site, fetched);
   }
 
   return {
@@ -81,6 +83,8 @@ export async function resolveTokenInfo(
  * resolveTokenInfos resolves every token coordinate exposed by a source input.
  * Token URLs return a one-item array; collection-like pages may use static DOM,
  * caller-provided rendering, or keyless public APIs to return many tokens.
+ * Set includeArtworkSource to return coordinate-paired artwork URLs where the
+ * matched marketplace exposes them without credentials.
  */
 export async function resolveTokenInfos(
   input: string,
@@ -89,13 +93,18 @@ export async function resolveTokenInfos(
   const limit = normalizeResolveTokenInfosLimit(options.limit);
   const parsed = parseFindInput(input);
   if (parsed?.kind === 'token') {
-    return {
-      kind: 'tokens',
-      method: 'url',
-      source: parsed.source,
-      coords: [parsed.coords],
-      title: titleForParsedInput(parsed, null),
-    };
+    const url = parseUrl(input);
+    const site = url ? matchSite(url, siteAdapters) : null;
+    return tokensResolution(
+      'url',
+      [parsed],
+      titleForParsedInput(parsed, null),
+      options,
+      url,
+      site,
+      undefined,
+      limit
+    );
   }
 
   const url = parseUrl(input);
@@ -117,11 +126,24 @@ export async function resolveTokenInfos(
         'api',
         apiTokens,
         bestFetchedTitle(site, url, parsed, fetched, apiFindings.title),
+        options,
+        url,
+        site,
+        fetched,
         limit,
         apiFindings.hasMore
       );
     }
-    return tokensResolution('dom', domTokens, bestFetchedTitle(site, url, parsed, fetched), limit);
+    return tokensResolution(
+      'dom',
+      domTokens,
+      bestFetchedTitle(site, url, parsed, fetched),
+      options,
+      url,
+      site,
+      fetched,
+      limit
+    );
   }
 
   if (options.renderer) {
@@ -144,6 +166,10 @@ export async function resolveTokenInfos(
           'api',
           apiTokens,
           bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null, apiFindings.title),
+          options,
+          url,
+          site,
+          rendered ?? fetched,
           limit,
           apiFindings.hasMore
         );
@@ -152,6 +178,10 @@ export async function resolveTokenInfos(
         'headless',
         renderedTokens,
         bestFetchedTitle(site, url, parsed, rendered ?? fetched ?? null),
+        options,
+        url,
+        site,
+        rendered ?? fetched,
         limit
       );
     }
@@ -164,6 +194,10 @@ export async function resolveTokenInfos(
       'api',
       apiTokens,
       bestFetchedTitle(site, url, parsed, fetched, apiFindings.title),
+      options,
+      url,
+      site,
+      fetched,
       limit,
       apiFindings.hasMore
     );
@@ -175,16 +209,20 @@ export async function resolveTokenInfos(
   };
 }
 
-function tokensResolution(
+async function tokensResolution(
   method: TokenInfoResolutionMethod,
   tokens: Array<Extract<ParsedFindInput, { kind: 'token' }>>,
-  title?: string,
+  title: string | undefined,
+  options: ResolveTokenInfoOptions,
+  url: URL | null,
+  site: NonNullable<ReturnType<typeof matchSite>> | null,
+  html?: string | null,
   limit?: number,
   sourceHasMore = false
-): TokenInfosResolution {
+): Promise<TokenInfosResolution> {
   const limited = limit == null ? tokens : tokens.slice(0, limit);
   const hasMore = sourceHasMore || (limit != null && tokens.length > limit);
-  return {
+  const result: Extract<TokenInfosResolution, { kind: 'tokens' }> = {
     kind: 'tokens',
     method,
     source: limited[0].source,
@@ -192,6 +230,92 @@ function tokensResolution(
     ...(title ? { title } : {}),
     ...(hasMore ? { hasMore } : {}),
   };
+  const artworkSources = await resolveArtworkSources(site, url, result.coords, options, html);
+  return artworkSources.length > 0 ? { ...result, artworkSources } : result;
+}
+
+async function tokenResolution(
+  method: TokenInfoResolutionMethod,
+  token: Extract<ParsedFindInput, { kind: 'token' }>,
+  options: ResolveTokenInfoOptions,
+  url: URL | null,
+  site: NonNullable<ReturnType<typeof matchSite>> | null,
+  html?: string | null
+): Promise<TokenInfoResolution> {
+  const result: Extract<TokenInfoResolution, { kind: 'token' }> = {
+    kind: 'token',
+    method,
+    source: token.source,
+    coords: token.coords,
+  };
+  const [finding] = await resolveArtworkSources(site, url, [token.coords], options, html);
+  return finding ? { ...result, artworkSource: finding.artworkSource } : result;
+}
+
+/**
+ * resolveArtworkSources performs opt-in source enrichment after token identity
+ * has been resolved. Adapter failures do not discard otherwise valid token
+ * coordinates.
+ */
+async function resolveArtworkSources(
+  site: NonNullable<ReturnType<typeof matchSite>> | null,
+  url: URL | null,
+  coords: readonly TokenCoords[],
+  options: ResolveTokenInfoOptions,
+  html?: string | null
+): Promise<ArtworkSourceFinding[]> {
+  if (!options.includeArtworkSource || !site?.resolveArtworkSources || !url) {
+    return [];
+  }
+  const doFetch = options.fetch ?? globalThis.fetch;
+  if (!doFetch) {
+    return [];
+  }
+  try {
+    const findings = await site.resolveArtworkSources(url, coords, doFetch, { html });
+    return normalizeArtworkSourceFindings(findings, coords);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeArtworkSourceFindings(
+  findings: readonly ArtworkSourceFinding[],
+  requestedCoords: readonly TokenCoords[]
+): ArtworkSourceFinding[] {
+  const requested = new Map(
+    requestedCoords.map((coords) => [tokenCoordsKey(coords), coords] as const)
+  );
+  const results = new Map<string, ArtworkSourceFinding>();
+  for (const finding of findings) {
+    const normalized = normalizeTokenCoords(finding.coords);
+    const artworkSource = browserArtworkSource(finding.artworkSource);
+    if (!normalized || !artworkSource) {
+      continue;
+    }
+    const key = tokenCoordsKey(normalized);
+    const coords = requested.get(key);
+    if (coords && !results.has(key)) {
+      results.set(key, { coords, artworkSource });
+    }
+  }
+  return requestedCoords.flatMap((coords) => {
+    const finding = results.get(tokenCoordsKey(coords));
+    return finding ? [finding] : [];
+  });
+}
+
+function browserArtworkSource(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function tokenCoordsKey(coords: TokenCoords): string {
+  return `${coords.chain}:${coords.contract}:${coords.tokenId}`;
 }
 
 /**

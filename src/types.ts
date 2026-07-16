@@ -6,6 +6,15 @@ export interface TokenCoords {
   tokenId: string;
 }
 
+/**
+ * ArtworkSourceFinding pairs token identity with a browser-loadable artwork
+ * URL returned by a marketplace page or keyless public API.
+ */
+export interface ArtworkSourceFinding {
+  coords: TokenCoords;
+  artworkSource: string;
+}
+
 export type MarketplaceSource =
   | 'objkt'
   | 'artblocks'
@@ -52,6 +61,12 @@ export interface SourceSiteAdapter {
     fetchImpl: typeof fetch,
     context?: ResolveTokensFromApiContext
   ): Promise<TokenFindingsResult>;
+  resolveArtworkSources?(
+    url: URL,
+    coords: readonly TokenCoords[],
+    fetchImpl: typeof fetch,
+    context?: ResolveArtworkSourcesContext
+  ): Promise<readonly ArtworkSourceFinding[]>;
 }
 
 export interface ResolveTokensFromApiContext {
@@ -66,6 +81,10 @@ export interface ResolveTokensFromApiContext {
    * bounded reads, while returning hasMore when additional source tokens exist.
    */
   limit?: number;
+}
+
+export interface ResolveArtworkSourcesContext {
+  html?: string | null;
 }
 
 export type TokenFindingsResult =
@@ -96,6 +115,11 @@ export interface HeadlessPageRenderer {
 export interface ResolveTokenInfoOptions {
   fetch?: typeof fetch;
   renderer?: HeadlessPageRenderer;
+  /**
+   * Resolves browser-loadable artwork URLs in addition to token coordinates.
+   * This may inspect page content or call a keyless marketplace API.
+   */
+  includeArtworkSource?: boolean;
 }
 
 /**
@@ -115,6 +139,7 @@ export type TokenInfoResolution =
       method: TokenInfoResolutionMethod;
       source: 'raw' | MarketplaceSource;
       coords: TokenCoords;
+      artworkSource?: string;
     }
   | { kind: 'not-found'; reason: string };
 
@@ -126,5 +151,6 @@ export type TokenInfosResolution =
       coords: TokenCoords[];
       title?: string;
       hasMore?: boolean;
+      artworkSources?: ArtworkSourceFinding[];
     }
   | { kind: 'not-found'; reason: string };

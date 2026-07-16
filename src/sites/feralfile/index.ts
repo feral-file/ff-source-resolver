@@ -9,6 +9,7 @@ import { limitTokenFindings, tokenLimitTarget } from '../../limits';
 import { parseFeralFileArtwork } from './pages/artwork';
 import { parseFeralFileSeries } from './pages/series';
 import { parseFeralFileShow } from './pages/show';
+import { resolveFeralFileArtworkSources } from './pages/source';
 
 interface FeralFileApiResponse<T> {
   result?: T;
@@ -56,6 +57,7 @@ export const feralFileAdapter: SourceSiteAdapter = {
   async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveFeralFileTokensFromApi(parsed, fetchImpl, context);
   },
+  resolveArtworkSources: resolveFeralFileArtworkSources,
 };
 
 async function resolveFeralFileTokensFromApi(

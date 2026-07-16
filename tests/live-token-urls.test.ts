@@ -20,6 +20,7 @@ interface LiveSiteUrlFixture {
   requestedUrl?: string;
   acceptedFinalUrls?: string[];
   expected: ExpectedParsedInput;
+  expectedArtworkSource?: RegExp;
   browserNote: string;
 }
 
@@ -66,6 +67,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '9201',
       },
     },
+    expectedArtworkSource: /^https:\/\/ipfs\.io\/ipfs\//,
     browserNote: 'Browser title: Behind Asteroids.',
   },
   {
@@ -115,6 +117,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '1',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: #1 - Bored Ape Yacht Club | OpenSea.',
   },
   {
@@ -153,6 +156,8 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '13000000',
       },
     },
+    expectedArtworkSource:
+      /^https:\/\/generator\.artblocks\.io\/1\/0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270\/13000000$/,
     browserNote: 'Browser title: Ringers #0 by Dmitri Cherniak | Art Blocks.',
   },
   {
@@ -203,6 +208,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
     page: 'iteration-slug',
     url: 'https://www.fxhash.xyz/iteration/garden-monoliths-215',
     expected: { kind: 'fxhash-iteration', slug: 'garden-monoliths-215' },
+    expectedArtworkSource: /^https:\/\/ipfs\.io\/ipfs\//,
     browserNote: 'Browser title: Garden, Monoliths #215 by zancan | fxhash.',
   },
   {
@@ -233,6 +239,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '1',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Disassociative.',
   },
   {
@@ -270,6 +277,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '139',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Quantizer 139 by Harm van den Dorpel | Verse.',
   },
   {
@@ -300,6 +308,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
         tokenId: '95',
       },
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Raster token page.',
   },
   {
@@ -311,6 +320,7 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
       urlKind: 'artwork',
       identifier: 'f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
     },
+    expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Feral File | Exhibitions.',
   },
   {
@@ -484,6 +494,20 @@ describe('live token URL fixtures', { skip: !RUN_LIVE }, () => {
       assert.equal(result.method, 'url');
       assert.deepEqual(result.coords, fixture.expected.coords);
     });
+
+    if (fixture.expectedArtworkSource) {
+      test(`${fixture.source} ${fixture.page}: opt-in artwork source remains playable`, async () => {
+        const result = await resolveTokenInfos(fixture.url, { includeArtworkSource: true });
+        assert.equal(result.kind, 'tokens', fixture.browserNote);
+        if (result.kind !== 'tokens') {
+          throw new Error('narrowing');
+        }
+        assert.ok(result.artworkSources?.length, `${fixture.source} returned no artwork source`);
+        for (const finding of result.artworkSources ?? []) {
+          assert.match(finding.artworkSource, fixture.expectedArtworkSource!);
+        }
+      });
+    }
   }
 });
 

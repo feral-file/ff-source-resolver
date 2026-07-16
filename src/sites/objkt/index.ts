@@ -1,6 +1,7 @@
 import type { ParsedFindInput, SourceSiteAdapter, TokenFindingsResult } from '../../types';
 import { resolveObjktCollectionFromApi } from './pages/api';
 import { parseObjktCollection } from './pages/collection';
+import { resolveObjktArtworkSources } from './pages/source';
 import {
   extractObjktCollectionTokensFromHtml,
   extractObjktTokenFromHtml,
@@ -30,5 +31,8 @@ export const objktAdapter: SourceSiteAdapter = {
   },
   async resolveTokensFromApi(_url, parsed, fetchImpl, context): Promise<TokenFindingsResult> {
     return resolveObjktCollectionFromApi(parsed, fetchImpl, context);
+  },
+  async resolveArtworkSources(_url, coords, fetchImpl) {
+    return resolveObjktArtworkSources(coords, fetchImpl);
   },
 };

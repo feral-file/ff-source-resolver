@@ -3,6 +3,7 @@ import { resolveOpenSeaCollectionFromApi } from './pages/api';
 import { parseOpenSeaCollection } from './pages/collection';
 import { extractOpenSeaEmbeddedItems, extractOpenSeaEmbeddedItemTokens } from './pages/embedded-items';
 import { parseOpenSeaItem } from './pages/item';
+import { resolveOpenSeaArtworkSources } from './pages/source';
 
 /**
  * openSeaAdapter owns OpenSea URL and page extraction rules.
@@ -33,5 +34,8 @@ export const openSeaAdapter: SourceSiteAdapter = {
   },
   async resolveTokensFromApi(url, parsed, fetchImpl): Promise<readonly ParsedFindInput[]> {
     return resolveOpenSeaCollectionFromApi(url, parsed, fetchImpl);
+  },
+  async resolveArtworkSources(url, coords, fetchImpl, context) {
+    return resolveOpenSeaArtworkSources(url, coords, fetchImpl, context);
   },
 };
