@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_call:
   workflow_dispatch:
   schedule:
     # Nightly URL drift check at 09:17 UTC.

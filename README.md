@@ -147,3 +147,13 @@ The headless suite hooks Playwright into the `HeadlessPageRenderer` interface
 and verifies pages whose token links appear only after client-side rendering.
 CI runs both live suites on pull requests, scheduled runs, and manual dispatch
 so supported-site URL changes are caught early.
+
+## Releasing
+
+Releases publish to npm as [`@feralfile/source-resolver`](https://www.npmjs.com/package/@feralfile/source-resolver) via GitHub Actions OIDC trusted publishing (`.github/workflows/release.yml`).
+
+1. Set `package.json` `version` to the release version on `main`.
+2. Create a GitHub release whose tag is exactly that version (bare, no `v` prefix — e.g. `1.0.1`), matching the ff-cli tag convention.
+3. The Release workflow runs CI, verifies the tag matches `package.json`, publishes with provenance, and verifies the registry version.
+
+Bootstrap note: npm cannot configure a trusted publisher for a package that does not exist yet (npm/cli#8544), so the very first publish authenticates with an `NPM_TOKEN` repo secret (granular automation token with publish rights on the `@feralfile` scope). After the package exists, wire the trusted publisher on npmjs.com (org `feral-file`, repo `ff-source-resolver`, workflow `release.yml`) and delete the secret — the same token-era → OIDC-era arc ff-cli followed.
