@@ -12,6 +12,7 @@ import {
   extractRasterArtworkTokensFromHtml,
   parseRasterArtwork,
 } from './pages/artwork';
+import { resolveRasterArtworkBySlug } from './graphql';
 import { resolveRasterArtworkSources } from './pages/source';
 import { parseRasterToken } from './pages/token';
 
@@ -70,17 +71,24 @@ async function resolveRasterArtworkTokensFromApi(
   }
   let html = context?.html ?? null;
   if (!html) {
+    // Non-fatal: raster.art serves a Vercel bot-protection challenge (429) to
+    // non-browser fetchers, so the page payload is a best-effort id source.
     const page = await fetchImpl(url.toString(), {
       headers: RASTER_PAGE_HEADERS,
-    });
-    if (!page.ok) {
+    }).catch(() => null);
+    if (page?.ok) {
+      html = await page.text();
+    }
+  }
+  let artworkId = html ? extractRasterArtworkId(html) : null;
+  let apiTitle: string | undefined;
+  if (!artworkId) {
+    const artwork = await resolveRasterArtworkBySlug(parsed.slug, fetchImpl);
+    if (!artwork) {
       return { findings: [] };
     }
-    html = await page.text();
-  }
-  const artworkId = extractRasterArtworkId(html);
-  if (!artworkId) {
-    return { findings: [] };
+    artworkId = artwork.id;
+    apiTitle = artwork.title;
   }
 
   const results: ParsedFindInput[] = [];
@@ -126,6 +134,7 @@ async function resolveRasterArtworkTokensFromApi(
   }
   return {
     findings: limitTokenFindings(results, context?.limit),
+    ...(apiTitle ? { title: apiTitle } : {}),
     ...(hasMore ? { hasMore } : {}),
   };
 }
