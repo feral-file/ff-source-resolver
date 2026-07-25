@@ -1308,6 +1308,31 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('Raster artwork falls back to GraphQL slug lookup when the page is bot-challenged', async () => {
+    const result = await resolveTokenInfos('https://raster.art/artwork/split-logic-by-ricky-retouch', {
+      fetch: rasterChallengedApiFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Split Logic');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '95' },
+      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '100' },
+    ]);
+  });
+
+  test('Raster artwork reports not-found when the page is challenged and GraphQL misses', async () => {
+    const result = await resolveTokenInfos('https://raster.art/artwork/no-such-artwork', {
+      fetch: rasterChallengedApiFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'not-found');
+  });
+
   test('fxhash project resolves full collection through public GraphQL', async () => {
     const result = await resolveTokenInfos('https://www.fxhash.xyz/generative/slug/the-fable', {
       fetch: fxhashProjectFetch() as typeof fetch,
@@ -2576,6 +2601,57 @@ function rasterApiFetch(): (input: string | URL | Request, init?: RequestInit) =
         headers: { 'Content-Type': 'text/html' },
         }
       );
+    }
+    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=0')) {
+      return Response.json({
+        tokens: [
+          {
+            chain_id: 'eip155:1',
+            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+            token_id: '95',
+          },
+          {
+            chain_id: 'eip155:1',
+            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+            token_id: '100',
+          },
+        ],
+        cursor: 2,
+      });
+    }
+    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=2')) {
+      return Response.json({ tokens: [], cursor: 2 });
+    }
+    return new Response('not found', { status: 404 });
+  };
+}
+
+/**
+ * rasterChallengedApiFetch simulates raster.art behind the Vercel bot-protection
+ * checkpoint: artwork pages answer 429 with a challenge document, while the
+ * keyless GraphQL and kit APIs stay reachable.
+ */
+function rasterChallengedApiFetch(): (
+  input: string | URL | Request,
+  init?: RequestInit
+) => Promise<Response> {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.startsWith('https://raster.art/artwork/')) {
+      return new Response(
+        '<html><head><title>Vercel Security Checkpoint</title></head><body></body></html>',
+        { status: 429, headers: { 'Content-Type': 'text/html' } }
+      );
+    }
+    if (url === 'https://api.raster.art/graphql') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        variables?: { slug?: string };
+      };
+      const artwork =
+        body.variables?.slug === 'split-logic-by-ricky-retouch'
+          ? { id: 2886465, title: 'Split Logic' }
+          : null;
+      return Response.json({ data: { artworkBySlug: artwork } });
     }
     if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=0')) {
       return Response.json({
