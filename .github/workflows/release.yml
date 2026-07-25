@@ -59,16 +59,31 @@ jobs:
         run: npm ci
 
       - name: Publish to npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
           VERSION=$(node -p "require('./package.json').version")
 
-          # Idempotent: the bootstrap release (first publish done manually while
-          # wiring the trusted publisher) may already exist on the registry.
+          # Idempotent: re-running a release for an already-published version
+          # verifies instead of failing.
           if npm view "@feralfile/source-resolver@${VERSION}" version > /dev/null 2>&1; then
             echo "@feralfile/source-resolver@${VERSION} is already published; skipping."
             exit 0
+          fi
+
+          # Bootstrap path, mirroring ff-cli's pre-OIDC release era: npm cannot
+          # configure a trusted publisher for a package that does not exist yet
+          # (npm/cli#8544), so the first publish authenticates with an NPM_TOKEN
+          # repo secret. Once the package exists and its trusted publisher is
+          # wired on npmjs.com, delete the secret — publishes then use OIDC
+          # with no workflow change (ff-cli PR #61 arc).
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "NPM_TOKEN secret present: publishing with token auth (bootstrap path)."
+            export NODE_AUTH_TOKEN="${NPM_TOKEN}"
+          else
+            echo "No NPM_TOKEN secret: publishing via OIDC trusted publishing."
           fi
 
           npm publish --access public --provenance

@@ -155,3 +155,5 @@ Releases publish to npm as [`@feralfile/source-resolver`](https://www.npmjs.com/
 1. Set `package.json` `version` to the release version on `main`.
 2. Create a GitHub release whose tag is exactly that version (bare, no `v` prefix — e.g. `1.0.1`), matching the ff-cli tag convention.
 3. The Release workflow runs CI, verifies the tag matches `package.json`, publishes with provenance, and verifies the registry version.
+
+Bootstrap note: npm cannot configure a trusted publisher for a package that does not exist yet (npm/cli#8544), so the very first publish authenticates with an `NPM_TOKEN` repo secret (granular automation token with publish rights on the `@feralfile` scope). After the package exists, wire the trusted publisher on npmjs.com (org `feral-file`, repo `ff-source-resolver`, workflow `release.yml`) and delete the secret — the same token-era → OIDC-era arc ff-cli followed.
