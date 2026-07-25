@@ -147,3 +147,11 @@ The headless suite hooks Playwright into the `HeadlessPageRenderer` interface
 and verifies pages whose token links appear only after client-side rendering.
 CI runs both live suites on pull requests, scheduled runs, and manual dispatch
 so supported-site URL changes are caught early.
+
+## Releasing
+
+Releases publish to npm as [`@feralfile/source-resolver`](https://www.npmjs.com/package/@feralfile/source-resolver) via GitHub Actions OIDC trusted publishing (`.github/workflows/release.yml`).
+
+1. Set `package.json` `version` to the release version on `main`.
+2. Create a GitHub release whose tag is exactly that version (bare, no `v` prefix — e.g. `1.0.1`), matching the ff-cli tag convention.
+3. The Release workflow runs CI, verifies the tag matches `package.json`, publishes with provenance, and verifies the registry version.
