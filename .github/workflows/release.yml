@@ -19,11 +19,12 @@ jobs:
           node-version: 22
 
       - name: Verify package version matches tag
+        env:
+          TAG_VERSION: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
 
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${{ github.event.release.tag_name }}"
 
           if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
             echo "Version mismatch: package.json is $PACKAGE_VERSION but tag is $TAG_VERSION."
@@ -93,10 +94,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify npm package version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
 
-          TAG="${{ github.event.release.tag_name }}"
           ATTEMPTS=10
           SLEEP_SECONDS=10
 
