@@ -1,6 +1,6 @@
 {
   "name": "@feralfile/source-resolver",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Keyless source resolver utilities for extracting artwork token coordinates from marketplace inputs.",
   "repository": {
     "type": "git",
