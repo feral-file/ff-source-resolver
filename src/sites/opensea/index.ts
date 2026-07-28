@@ -3,6 +3,7 @@ import { resolveOpenSeaCollectionFromApi } from './pages/api';
 import { parseOpenSeaCollection } from './pages/collection';
 import { extractOpenSeaEmbeddedItems, extractOpenSeaEmbeddedItemTokens } from './pages/embedded-items';
 import { parseOpenSeaItem } from './pages/item';
+import { extractOpenSeaCollectionTitle } from './pages/title';
 import { resolveOpenSeaArtworkSources } from './pages/source';
 
 /**
@@ -25,6 +26,9 @@ export const openSeaAdapter: SourceSiteAdapter = {
       return null;
     }
     return extractOpenSeaEmbeddedItems(html);
+  },
+  extractTitleFromHtml(url: URL, html: string, parsed: ParsedFindInput | null): string | null {
+    return extractOpenSeaCollectionTitle(url, html, parsed);
   },
   extractTokensFromHtml(url: URL, html: string): readonly ParsedFindInput[] {
     if (parseOpenSeaCollection(url)?.kind !== 'os-collection') {

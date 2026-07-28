@@ -1083,6 +1083,41 @@ describe('resolveTokenInfos collection support', () => {
     assert.equal(result.title, 'Chromie Squiggle by Snowfro');
   });
 
+  test('OpenSea collection prefers the embedded collection name over the page title', async () => {
+    const html = [
+      '<html><head><title>PXL NET 0.1904 ETH - Collection | OpenSea</title></head><body>',
+      '<script>{"collection":{"name":"PXL NET","slug":"pxl-net","__typename":"CollectionType"}}</script>',
+      openSeaCollectionItems(openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97')),
+      '</body></html>',
+    ].join('');
+    const result = await resolveTokenInfos('https://opensea.io/collection/pxl-net', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.title, 'PXL NET');
+  });
+
+  test('OpenSea collection scrubs floor price and furniture from a title fallback', async () => {
+    const html = [
+      '<html><head><title>PXL NET 0.1904 ETH - Collection | OpenSea</title></head><body>',
+      openSeaCollectionItems(openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97')),
+      '</body></html>',
+    ].join('');
+    const result = await resolveTokenInfos('https://opensea.io/collection/pxl-net', {
+      fetch: htmlFetch(html) as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.title, 'PXL NET');
+  });
+
   test('OpenSea collection does not call the authenticated collection NFTs API', async () => {
     const html = openSeaCollectionItems(openSeaItem('ethereum', OPENSEA_COLLECTION_CONTRACT, '97'));
     const calledUrls: string[] = [];
