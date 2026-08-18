@@ -6,6 +6,7 @@ import type {
 } from '../../types';
 import { sourceTokenResult } from '../../helpers';
 import { limitTokenFindings, tokenLimitTarget } from '../../limits';
+import { rasterSupportedChain } from './chain';
 import {
   extractRasterArtworkId,
   extractRasterArtworkTokenFromHtml,
@@ -140,7 +141,7 @@ async function resolveRasterArtworkTokensFromApi(
 }
 
 function rasterApiToken(token: NonNullable<RasterTokenPage['tokens']>[number]): ParsedFindInput | null {
-  const chain = token.chain_id === 'eip155:1' ? 'ethereum' : null;
+  const chain = rasterSupportedChain(token.chain_id);
   const contract = token.contract_address ?? '';
   const tokenId = token.token_id == null ? '' : String(token.token_id);
   return chain && contract && tokenId ? sourceTokenResult('raster', chain, contract, tokenId) : null;

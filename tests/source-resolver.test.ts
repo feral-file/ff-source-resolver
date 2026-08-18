@@ -1360,6 +1360,41 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('Raster Tezos artwork keeps its tokens through kit API enumeration', async () => {
+    const result = await resolveTokenInfos('https://raster.art/artwork/plotterns-by-nt-worm', {
+      fetch: rasterApiFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576664' },
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576665' },
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576667' },
+    ]);
+  });
+
+  test('Raster Tezos artwork keeps its tokens when the page is bot-challenged', async () => {
+    const result = await resolveTokenInfos('https://raster.art/artwork/plotterns-by-nt-worm', {
+      fetch: rasterChallengedApiFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Plotterns');
+    assert.deepEqual(result.coords, [
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576664' },
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576665' },
+      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576667' },
+    ]);
+  });
+
   test('Raster artwork reports not-found when the page is challenged and GraphQL misses', async () => {
     const result = await resolveTokenInfos('https://raster.art/artwork/no-such-artwork', {
       fetch: rasterChallengedApiFetch() as typeof fetch,
@@ -2624,40 +2659,58 @@ function feralFileArtworkFetch(): (input: string | URL | Request, init?: Request
   };
 }
 
+interface RasterFixtureArtwork {
+  slug: string;
+  id: number;
+  pageTitle: string;
+  apiTitle: string;
+  chainId: string;
+  contract: string;
+  tokenIds: readonly string[];
+}
+
+/**
+ * RASTER_FIXTURE_ARTWORKS mirrors live kit API payloads (observed 2026-08-17):
+ * one Ethereum series and one Tezos series, whose `chain_id` shapes differ.
+ */
+const RASTER_FIXTURE_ARTWORKS: readonly RasterFixtureArtwork[] = [
+  {
+    slug: 'split-logic-by-ricky-retouch',
+    id: 2886465,
+    pageTitle: 'Split Logic by Ricky Retouch | Raster',
+    apiTitle: 'Split Logic',
+    chainId: 'eip155:1',
+    contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+    tokenIds: ['95', '100'],
+  },
+  {
+    slug: 'plotterns-by-nt-worm',
+    id: 117841,
+    pageTitle: 'Plotterns by NT Worm | Raster',
+    apiTitle: 'Plotterns',
+    chainId: 'tezos:NetXdQprcVkpaWU',
+    contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi',
+    tokenIds: ['1576664', '1576665', '1576667'],
+  },
+];
+
 function rasterApiFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url === 'https://raster.art/artwork/split-logic-by-ricky-retouch') {
+    const page = RASTER_FIXTURE_ARTWORKS.find(
+      (artwork) => url === `https://raster.art/artwork/${artwork.slug}`
+    );
+    if (page) {
       return new Response(
-        '<html><head><title>Split Logic by Ricky Retouch | Raster</title></head>' +
-          '<body>{"children":[["$","$L25",null,{"artworkId\\":2886465}]]}</body></html>',
+        `<html><head><title>${page.pageTitle}</title></head>` +
+          `<body>{"children":[["$","$L25",null,{"artworkId\\":${page.id}}]]}</body></html>`,
         {
-        status: 200,
-        headers: { 'Content-Type': 'text/html' },
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
         }
       );
     }
-    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=0')) {
-      return Response.json({
-        tokens: [
-          {
-            chain_id: 'eip155:1',
-            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
-            token_id: '95',
-          },
-          {
-            chain_id: 'eip155:1',
-            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
-            token_id: '100',
-          },
-        ],
-        cursor: 2,
-      });
-    }
-    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=2')) {
-      return Response.json({ tokens: [], cursor: 2 });
-    }
-    return new Response('not found', { status: 404 });
+    return rasterKitTokensResponse(url) ?? new Response('not found', { status: 404 });
   };
 }
 
@@ -2682,32 +2735,37 @@ function rasterChallengedApiFetch(): (
       const body = JSON.parse(String(init?.body ?? '{}')) as {
         variables?: { slug?: string };
       };
-      const artwork =
-        body.variables?.slug === 'split-logic-by-ricky-retouch'
-          ? { id: 2886465, title: 'Split Logic' }
-          : null;
+      const match = RASTER_FIXTURE_ARTWORKS.find(
+        (artwork) => artwork.slug === body.variables?.slug
+      );
+      const artwork = match ? { id: match.id, title: match.apiTitle } : null;
       return Response.json({ data: { artworkBySlug: artwork } });
     }
-    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=0')) {
-      return Response.json({
-        tokens: [
-          {
-            chain_id: 'eip155:1',
-            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
-            token_id: '95',
-          },
-          {
-            chain_id: 'eip155:1',
-            contract_address: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
-            token_id: '100',
-          },
-        ],
-        cursor: 2,
-      });
-    }
-    if (url.includes('https://kit.raster.art/artwork/2886465/tokens?cursor=2')) {
-      return Response.json({ tokens: [], cursor: 2 });
-    }
-    return new Response('not found', { status: 404 });
+    return rasterKitTokensResponse(url) ?? new Response('not found', { status: 404 });
   };
+}
+
+/**
+ * rasterKitTokensResponse answers the keyless kit token enumeration endpoint,
+ * returning every fixture token on the first cursor and an empty page after it.
+ */
+function rasterKitTokensResponse(url: string): Response | null {
+  for (const artwork of RASTER_FIXTURE_ARTWORKS) {
+    if (!url.startsWith(`https://kit.raster.art/artwork/${artwork.id}/tokens?`)) {
+      continue;
+    }
+    const cursor = new URL(url).searchParams.get('cursor');
+    if (cursor !== '0') {
+      return Response.json({ tokens: [], cursor });
+    }
+    return Response.json({
+      tokens: artwork.tokenIds.map((tokenId) => ({
+        chain_id: artwork.chainId,
+        contract_address: artwork.contract,
+        token_id: tokenId,
+      })),
+      cursor: artwork.tokenIds.length,
+    });
+  }
+  return null;
 }

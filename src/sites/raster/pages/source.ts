@@ -3,6 +3,7 @@ import type {
   ResolveArtworkSourcesContext,
   TokenCoords,
 } from '../../../types';
+import { rasterSupportedChain } from '../chain';
 import { extractRasterArtworkId, parseRasterArtwork } from './artwork';
 import { parseRasterToken } from './token';
 
@@ -218,12 +219,7 @@ function rasterPreviewUrl(
 }
 
 function rasterTokenKey(token: RasterArtworkToken): string | null {
-  const chain =
-    token.chain_id === 'eip155:1'
-      ? 'ethereum'
-      : token.chain_id?.startsWith('tezos:') || token.chain_id === 'tezos'
-        ? 'tezos'
-        : null;
+  const chain = rasterSupportedChain(token.chain_id);
   if (!chain || !token.contract_address || token.token_id == null) {
     return null;
   }
