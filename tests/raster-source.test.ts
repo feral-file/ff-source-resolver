@@ -160,7 +160,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     assert.deepEqual(requests, [GRAPHQL_URL]);
   });
 
-  test('fetches kit details only for tokens whose GraphQL contentUrl is empty', async () => {
+  test('prefers the CDN preview over a kit detail lookup when contentUrl is empty', async () => {
     const coords = [ethereumCoords('95'), ethereumCoords('96')];
     const requests: string[] = [];
     const fetchImpl = graphqlAwareFetch(requests, {
@@ -171,6 +171,38 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
             contentUrl: '',
             previewHash: 'fedcba9876543210',
             previewType: 'image/2',
+          }),
+        ],
+      }),
+    });
+
+    const findings = await resolveRasterArtworkSources(new URL(ARTWORK_URL), coords, fetchImpl);
+
+    assert.equal(findings.length, 2);
+    assert.equal(findings[0]?.artworkSource, 'https://example.com/original-95.svg');
+    assert.equal(
+      findings[1]?.artworkSource,
+      'https://bits.raster.art/fedc/fedcba9876543210/700.avif'
+    );
+    // The whole point: a usable preview means no per-token request at all.
+    assert.deepEqual(
+      requests.filter((value) => value.includes('/token/')),
+      []
+    );
+  });
+
+  test('falls back to a kit detail only when neither contentUrl nor preview is usable', async () => {
+    // svg/1 is the case with no CDN rendition, so the detail lookup earns its
+    // request there and nowhere else.
+    const coords = [ethereumCoords('96')];
+    const requests: string[] = [];
+    const fetchImpl = graphqlAwareFetch(requests, {
+      graphql: graphqlArtwork({
+        tokens: [
+          graphqlToken('96', {
+            contentUrl: '',
+            previewHash: '0123456789abcdef',
+            previewType: 'svg/1',
           }),
         ],
       }),
@@ -186,22 +218,15 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
       },
     });
 
-    const findings = await resolveRasterArtworkSources(
-      new URL(ARTWORK_URL),
-      coords,
-      fetchImpl
-    );
+    const findings = await resolveRasterArtworkSources(new URL(ARTWORK_URL), coords, fetchImpl);
 
-    assert.equal(findings.length, 2);
-    assert.equal(findings[0]?.artworkSource, 'https://example.com/original-95.svg');
-    assert.equal(findings[1]?.artworkSource, 'https://generator.example/96');
-    assert.equal(findings[1]?.title, 'Split Logic #96');
-    assert.equal(findings[1]?.description, 'Token-level story.');
-    assert.equal(findings[1]?.metadataUri, 'https://api.example/token/96');
-    const detailRequests = requests.filter((value) => value.includes('/token/'));
-    assert.deepEqual(detailRequests, [
-      `https://kit.raster.art/token/eip155%3A1/${CONTRACT}/96`,
-    ]);
+    assert.equal(findings[0]?.artworkSource, 'https://generator.example/96');
+    assert.equal(findings[0]?.title, 'Split Logic #96');
+    assert.equal(findings[0]?.metadataUri, 'https://api.example/token/96');
+    assert.deepEqual(
+      requests.filter((value) => value.includes('/token/')),
+      [`https://kit.raster.art/token/eip155%3A1/${CONTRACT}/96`]
+    );
   });
 
   test('reuses an enrichmentContext enumeration instead of querying again', async () => {

@@ -148,7 +148,15 @@ async function graphqlArtworkSources(
     }
   }
 
-  const needDetail = matches.filter(({ token }) => !browserContentUrl(token.contentUrl));
+  // A kit detail lookup costs one request per token, so it is the last resort:
+  // it runs only for tokens the GraphQL enumeration could describe with neither
+  // an original content URL nor a usable CDN preview -- in practice `svg/1`,
+  // the one handler the CDN serves no rendition for.
+  const needDetail = matches.filter(
+    ({ token }) =>
+      !browserContentUrl(token.contentUrl) &&
+      !rasterPreviewUrl(token.previewHash, token.previewType)
+  );
   const details = new Map<string, RasterTokenDetail | null>();
   await forEachBatch(needDetail, async ({ requested, token }) => {
     const detail = await fetchRasterTokenByChainId(
@@ -167,8 +175,8 @@ async function graphqlArtworkSources(
     const detail = details.get(key) ?? null;
     const artworkSource =
       browserContentUrl(token.contentUrl) ??
-      (detail ? mediaSource(detail.metadata) : null) ??
-      rasterPreviewUrl(token.previewHash, token.previewType);
+      rasterPreviewUrl(token.previewHash, token.previewType) ??
+      (detail ? mediaSource(detail.metadata) : null);
     if (!artworkSource) {
       continue;
     }
