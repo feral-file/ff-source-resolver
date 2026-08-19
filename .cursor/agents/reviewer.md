@@ -1,7 +1,7 @@
 ---
 name: reviewer
 model: premium
-description: Read-only code reviewer for ff-source-resolver. Use after implementation for a fresh-context review.
+description: Read-only local code reviewer for ff-source-resolver. Use after implementation for a fresh-context review.
 readonly: true
 ---
 

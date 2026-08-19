@@ -4,10 +4,10 @@ alwaysApply: true
 
 # Review Workflow Rule
 
-When implementation is complete, run a review loop before commit, push, or PR.
+When implementation and verification are complete, use local fresh-context review as an implementation sensor for non-trivial changes.
 
 1. Produce a compact handoff: goal, scope, files changed, key decisions, checks run, known limitations.
 2. Invoke the reviewer sub-agent with fresh context and the shared review contract in `prompts/code-review.md`.
 3. Provide the reviewer the handoff, `git diff --stat`, `git diff`, and relevant verification output.
-4. If the reviewer returns `Verdict: revise`, address findings, re-run verification, update the handoff, and review again.
-5. Only proceed once the reviewer returns `Verdict: accept`.
+4. The human change owner dispositions material findings. If a material revision changes behavior, re-run verification and update the handoff.
+5. A later review may use fresh context and the full updated diff as another sensor reading; model acceptance is not a commit or merge gate.

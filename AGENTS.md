@@ -83,18 +83,18 @@ A task is complete only when:
 2. Relevant tests were added or updated, or an explicit reason is given.
 3. Verification passes.
 4. Docs are updated when behavior or usage changes.
-5. Fresh-context review returns `Verdict: accept`.
+5. A local fresh-context review was run for non-trivial changes and material findings were dispositioned by the human change owner.
 6. The branch is merge-ready without hidden follow-up work.
 
-## Review loop
+## Local review
 
-After implementation, run a review loop before merge or release preparation.
+After implementation and verification, use local fresh-context review as an implementation sensor for non-trivial changes.
 
 1. Create a compact handoff with goal, scope, files changed, key decisions,
    checks run, and known limitations.
-2. Run a fresh-context review using `prompts/code-review.md`.
-3. If review returns `Verdict: revise`, address findings and review again.
-4. Proceed only after `Verdict: accept`.
+2. Run a local fresh-context review using `prompts/code-review.md`.
+3. The human change owner dispositions material findings.
+4. If a material revision changes behavior, re-run verification; a later review may use fresh context and the full updated diff as another sensor reading.
 
 ## Commit and PR conventions
 
