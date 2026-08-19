@@ -1395,6 +1395,53 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('Raster artwork resolves coordinates and artwork sources from one GraphQL enumeration', async () => {
+    const requests: string[] = [];
+    const result = await resolveTokenInfos('https://raster.art/artwork/split-logic-by-ricky-retouch', {
+      fetch: rasterGraphqlFirstFetch(requests) as typeof fetch,
+      includeArtworkSource: true,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'api');
+    assert.equal(result.title, 'Split Logic');
+    assert.deepEqual(result.coords, [
+      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '95' },
+      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '100' },
+    ]);
+    assert.deepEqual(result.artworkSources, [
+      {
+        coords: result.coords[0],
+        artworkSource: 'https://arweave.net/original-95',
+        title: 'Split Logic #95',
+        description: 'A study in halves.',
+        artists: [{ name: 'Ricky Retouch' }],
+        creditLine: 'Raster Editions',
+        standard: 'erc721',
+      },
+      {
+        coords: result.coords[1],
+        artworkSource: 'https://generator.example/100',
+        description: 'A study in halves.',
+        artists: [{ name: 'Ricky Retouch' }],
+        creditLine: 'Raster Editions',
+        metadataUri: 'https://api.example/token/100',
+        standard: 'erc721',
+      },
+    ]);
+    // One GraphQL enumeration serves both passes; the only kit call is the
+    // detail lookup for the token whose GraphQL contentUrl was empty.
+    const graphqlRequests = requests.filter((value) => value === 'https://api.raster.art/graphql');
+    assert.equal(graphqlRequests.length, 1);
+    const kitRequests = requests.filter((value) => value.startsWith('https://kit.raster.art/'));
+    assert.deepEqual(kitRequests, [
+      'https://kit.raster.art/token/eip155%3A1/0xf5705202462f066ac55c293f5798ae027b2f27b5/100',
+    ]);
+  });
+
   test('Raster artwork reports not-found when the page is challenged and GraphQL misses', async () => {
     const result = await resolveTokenInfos('https://raster.art/artwork/no-such-artwork', {
       fetch: rasterChallengedApiFetch() as typeof fetch,
@@ -2742,6 +2789,71 @@ function rasterChallengedApiFetch(): (
       return Response.json({ data: { artworkBySlug: artwork } });
     }
     return rasterKitTokensResponse(url) ?? new Response('not found', { status: 404 });
+  };
+}
+
+/**
+ * rasterGraphqlFirstFetch simulates the GraphQL-first flow: the artwork page is
+ * bot-challenged, the paginated artworkBySlug query answers with metadata and
+ * the token connection, and kit serves only per-token details.
+ */
+function rasterGraphqlFirstFetch(
+  requests: string[]
+): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    requests.push(url);
+    if (url.startsWith('https://raster.art/artwork/')) {
+      return new Response('challenge', { status: 429, headers: { 'Content-Type': 'text/html' } });
+    }
+    if (url === 'https://api.raster.art/graphql') {
+      return Response.json({
+        data: {
+          artworkBySlug: {
+            id: 2886465,
+            title: 'Split Logic',
+            description: 'A study in halves.',
+            artists: [{ name: 'Ricky Retouch' }],
+            platform: { name: 'Raster Editions' },
+            tokens: {
+              totalCount: 2,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                {
+                  chainId: 'eip155:1',
+                  contractAddress: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+                  tokenId: '95',
+                  tokenStandard: 'ERC721',
+                  name: 'Split Logic #95',
+                  media: { contentUrl: 'ar://original-95', previewHash: null, previewType: null },
+                },
+                {
+                  chainId: 'eip155:1',
+                  contractAddress: '0xf5705202462f066ac55c293f5798ae027b2f27b5',
+                  tokenId: '100',
+                  tokenStandard: 'ERC721',
+                  name: null,
+                  media: { contentUrl: '', previewHash: null, previewType: null },
+                },
+              ],
+            },
+          },
+        },
+      });
+    }
+    if (
+      url ===
+      'https://kit.raster.art/token/eip155%3A1/0xf5705202462f066ac55c293f5798ae027b2f27b5/100'
+    ) {
+      return Response.json({
+        metadata: {
+          content_url: 'https://generator.example/100',
+          metadata_source_url: 'https://api.example/token/100',
+        },
+      });
+    }
+    void init;
+    return new Response('not found', { status: 404 });
   };
 }
 

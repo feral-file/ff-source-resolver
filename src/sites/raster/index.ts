@@ -13,20 +13,18 @@ import {
   extractRasterArtworkTokensFromHtml,
   parseRasterArtwork,
 } from './pages/artwork';
-import { resolveRasterArtworkBySlug } from './graphql';
+import type { RasterEnrichmentContext } from './graphql';
+import { resolveRasterArtworkBySlug, resolveRasterArtworkWithTokens } from './graphql';
 import { resolveRasterArtworkSources } from './pages/source';
 import { parseRasterToken } from './pages/token';
 
-const RASTER_PAGE_HEADERS = {
-  Accept: 'text/html,application/xhtml+xml',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-} as const;
-
 /**
  * rasterAdapter owns Raster URL and page extraction rules.
+ *
+ * raster.art itself sits behind a Vercel bot-protection checkpoint that 429s
+ * non-browser fetchers, so this adapter never fetches the page on its own:
+ * page HTML is only consumed when the caller already holds it, and everything
+ * else comes from the keyless GraphQL API with the kit REST API as fallback.
  */
 export const rasterAdapter: SourceSiteAdapter = {
   source: 'raster',
@@ -70,21 +68,56 @@ async function resolveRasterArtworkTokensFromApi(
   if (parsed?.kind !== 'raster-artwork') {
     return { findings: [] };
   }
-  let html = context?.html ?? null;
-  if (!html) {
-    // Non-fatal: raster.art serves a Vercel bot-protection challenge (429) to
-    // non-browser fetchers, so the page payload is a best-effort id source.
-    const page = await fetchImpl(url.toString(), {
-      headers: RASTER_PAGE_HEADERS,
-    }).catch(() => null);
-    if (page?.ok) {
-      html = await page.text();
+  const targetCount = tokenLimitTarget(context?.limit);
+
+  // GraphQL first: one paginated query yields coordinates plus the artwork
+  // metadata and media fields the enrichment pass needs, so its result is
+  // replayed through enrichmentContext instead of being fetched twice.
+  const artwork = await resolveRasterArtworkWithTokens(parsed.slug, fetchImpl, targetCount);
+  if (artwork) {
+    const results: ParsedFindInput[] = [];
+    for (const token of artwork.tokens) {
+      const chain = rasterSupportedChain(token.chainId);
+      const result =
+        chain && token.contractAddress && token.tokenId
+          ? sourceTokenResult('raster', chain, token.contractAddress, token.tokenId)
+          : null;
+      if (result) {
+        results.push(result);
+      }
+    }
+    if (results.length > 0) {
+      const hasMore =
+        artwork.hasMore || (context?.limit != null && results.length > context.limit);
+      const enrichmentContext: RasterEnrichmentContext = { artwork };
+      return {
+        findings: limitTokenFindings(results, context?.limit),
+        ...(artwork.title ? { title: artwork.title } : {}),
+        ...(hasMore ? { hasMore } : {}),
+        enrichmentContext,
+      };
     }
   }
+
+  return resolveRasterArtworkTokensFromKit(parsed.slug, fetchImpl, context);
+}
+
+/**
+ * resolveRasterArtworkTokensFromKit is the REST fallback enumeration, kept for
+ * the day Raster's GraphQL endpoint starts demanding credentials. It needs the
+ * numeric artwork id, which comes from already-fetched page HTML when the
+ * caller has it and from the lightweight GraphQL id query otherwise.
+ */
+async function resolveRasterArtworkTokensFromKit(
+  slug: string,
+  fetchImpl: typeof fetch,
+  context?: ResolveTokensFromApiContext
+): Promise<TokenFindingsResult> {
+  const html = context?.html ?? null;
   let artworkId = html ? extractRasterArtworkId(html) : null;
   let apiTitle: string | undefined;
   if (!artworkId) {
-    const artwork = await resolveRasterArtworkBySlug(parsed.slug, fetchImpl);
+    const artwork = await resolveRasterArtworkBySlug(slug, fetchImpl);
     if (!artwork) {
       return { findings: [] };
     }

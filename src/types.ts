@@ -9,10 +9,24 @@ export interface TokenCoords {
 /**
  * ArtworkSourceFinding pairs token identity with a browser-loadable artwork
  * URL returned by a marketplace page or keyless public API.
+ *
+ * The optional presentation fields let adapters surface everything a caller
+ * needs to build a display document without a downstream indexer: they are
+ * best-effort, absent whenever the marketplace does not expose them, and every
+ * adapter that only knows a source URL keeps returning the two-field shape.
  */
 export interface ArtworkSourceFinding {
   coords: TokenCoords;
   artworkSource: string;
+  title?: string;
+  description?: string;
+  artists?: ReadonlyArray<{ name: string }>;
+  creditLine?: string;
+  /** Browser-loadable still image for thumbnails, not the artwork itself. */
+  thumbnail?: string;
+  /** The token's metadata document URL (tokenURI), when the source exposes it. */
+  metadataUri?: string;
+  standard?: 'erc721' | 'erc1155' | 'fa2';
 }
 
 export type MarketplaceSource =
@@ -85,6 +99,12 @@ export interface ResolveTokensFromApiContext {
 
 export interface ResolveArtworkSourcesContext {
   html?: string | null;
+  /**
+   * enrichmentContext carries an adapter-defined payload from
+   * resolveTokensFromApi into resolveArtworkSources so a source that already
+   * enumerated its tokens once is not asked to enumerate them again.
+   */
+  enrichmentContext?: unknown;
 }
 
 export type TokenFindingsResult =
@@ -93,6 +113,11 @@ export type TokenFindingsResult =
       findings: readonly ParsedFindInput[];
       title?: string;
       hasMore?: boolean;
+      /**
+       * enrichmentContext is an opaque adapter payload replayed into the same
+       * adapter's resolveArtworkSources call for this resolution.
+       */
+      enrichmentContext?: unknown;
     };
 
 export type SingleTokenFindingsResult =
