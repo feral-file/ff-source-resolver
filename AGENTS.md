@@ -92,7 +92,7 @@ After implementation and verification, use local fresh-context review as an impl
 
 1. Create a compact handoff with goal, scope, files changed, key decisions,
    checks run, and known limitations.
-2. Run a local fresh-context review using `prompts/code-review.md`.
+2. Run a local fresh-context review using `prompts/code-review.md` and `prompts/code-review.delta.md`.
 3. The human change owner dispositions material findings.
 4. If a material revision changes behavior, re-run verification; a later review may use fresh context and the full updated diff as another sensor reading.
 

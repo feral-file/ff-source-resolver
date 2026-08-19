@@ -7,7 +7,7 @@ alwaysApply: true
 When implementation and verification are complete, use local fresh-context review as an implementation sensor for non-trivial changes.
 
 1. Produce a compact handoff: goal, scope, files changed, key decisions, checks run, known limitations.
-2. Invoke the reviewer sub-agent with fresh context and the shared review contract in `prompts/code-review.md`.
+2. Invoke the reviewer sub-agent with fresh context, the generated contract in `prompts/code-review.md`, and the repository context in `prompts/code-review.delta.md`.
 3. Provide the reviewer the handoff, `git diff --stat`, `git diff`, and relevant verification output.
 4. The human change owner dispositions material findings. If a material revision changes behavior, re-run verification and update the handoff.
 5. A later review may use fresh context and the full updated diff as another sensor reading; model acceptance is not a commit or merge gate.
