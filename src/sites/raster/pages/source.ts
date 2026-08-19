@@ -175,11 +175,16 @@ async function graphqlArtworkSources(
     results.set(key, {
       coords: requested,
       artworkSource,
-      ...optionalText('title', token.name ?? detail?.title),
-      ...optionalText('description', detail?.description ?? meta.description),
+      ...optionalText('title', token.name, detail?.title),
+      ...optionalText('description', detail?.description, meta.description),
       ...(meta.artists ? { artists: meta.artists } : {}),
       ...(meta.creditLine ? { creditLine: meta.creditLine } : {}),
-      ...optionalUrl('thumbnail', rasterPreviewUrl(token.previewHash, token.previewType)),
+      ...optionalUrl(
+        'thumbnail',
+        rasterPreviewUrl(token.previewHash, token.previewType) ??
+          rasterPreviewUrl(detail?.metadata?.preview_hash, detail?.metadata?.preview_type) ??
+          rasterPreviewUrl(detail?.metadata?.media_hash, detail?.metadata?.media_type)
+      ),
       ...optionalMetadataUri(detail?.metadata),
       ...optionalStandard(token.tokenStandard),
     });
@@ -255,7 +260,7 @@ async function kitArtworkSources(
     results.set(key, {
       coords: requested,
       artworkSource,
-      ...optionalText('title', detail?.title ?? token.name),
+      ...optionalText('title', detail?.title, token.name),
       ...optionalText('description', detail?.description),
       ...optionalThumbnail(token.metadata ?? detail?.metadata),
       ...optionalMetadataUri(detail?.metadata),
@@ -328,12 +333,23 @@ async function fetchRasterUrlJson<T>(url: URL, fetchImpl: typeof fetch): Promise
   }
 }
 
+/**
+ * optionalText takes the first non-blank candidate. Raster reports absent
+ * strings inconsistently -- GraphQL returns `""` for an Art Blocks token name
+ * where the kit detail has the real one -- so `??` would stop at the empty
+ * string and drop a value that exists one source over.
+ */
 function optionalText(
   key: 'title' | 'description',
-  value: string | null | undefined
+  ...values: Array<string | null | undefined>
 ): Partial<ArtworkSourceFinding> {
-  const text = value?.replace(/\s+/g, ' ').trim();
-  return text ? { [key]: text } : {};
+  for (const value of values) {
+    const text = value?.replace(/\s+/g, ' ').trim();
+    if (text) {
+      return { [key]: text };
+    }
+  }
+  return {};
 }
 
 function optionalUrl(

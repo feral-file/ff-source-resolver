@@ -241,6 +241,35 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     assert.deepEqual(requests, []);
   });
 
+  test('treats an empty GraphQL name as absent and takes the kit detail title', async () => {
+    // Raster reports an Art Blocks token's GraphQL name as "" while the kit
+    // detail carries the real one; `??` would keep the empty string.
+    const coords = [ethereumCoords('95')];
+    const requests: string[] = [];
+    const fetchImpl = graphqlAwareFetch(requests, {
+      graphql: graphqlArtwork({
+        tokens: [graphqlToken('95', { name: '', contentUrl: '' })],
+      }),
+      rest: {
+        [`https://kit.raster.art/token/eip155%3A1/${CONTRACT}/95`]: {
+          title: 'Saturazione #95',
+          description: '',
+          metadata: { content_url: 'https://generator.example/95' },
+        },
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(ARTWORK_URL),
+      coords,
+      fetchImpl
+    );
+
+    assert.equal(findings[0]?.title, 'Saturazione #95');
+    // An empty detail description must not shadow the artwork-level one.
+    assert.equal(findings[0]?.description, 'A study in halves.');
+  });
+
   test('falls back to preview when a needed kit detail is unavailable', async () => {
     const coords = [ethereumCoords('96')];
     const requests: string[] = [];
