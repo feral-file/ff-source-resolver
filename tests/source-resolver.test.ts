@@ -1425,6 +1425,7 @@ describe('resolveTokenInfos collection support', () => {
       {
         coords: result.coords[1],
         artworkSource: 'https://generator.example/100',
+        title: 'Split Logic #1',
         description: 'A study in halves.',
         artists: [{ name: 'Ricky Retouch' }],
         creditLine: 'Raster Editions',

@@ -138,13 +138,22 @@ async function graphqlArtworkSources(
   fetchImpl: typeof fetch
 ): Promise<ArtworkSourceFinding[]> {
   const remaining = requestedCoords(coords);
-  const matches: Array<{ requested: TokenCoords; token: RasterGraphqlToken }> = [];
+  const matches: Array<{ requested: TokenCoords; token: RasterGraphqlToken; mintIndex: number }> =
+    [];
+  let position = 0;
   for (const token of artwork.tokens) {
+    // The tokens connection is ordered by mint index, so a token's position in
+    // it is its index. Raster exposes the index itself only over REST, and
+    // measured across six series with no per-token name (600 tokens) the two
+    // agree exactly; the series whose index is 1-based all carry names, so the
+    // derivation below never runs for them.
+    const mintIndex = position;
+    position += 1;
     const key = graphqlTokenKey(token);
     const requested = key ? remaining.get(key) : undefined;
     if (key && requested) {
       remaining.delete(key);
-      matches.push({ requested, token });
+      matches.push({ requested, token, mintIndex });
     }
   }
 
@@ -170,7 +179,7 @@ async function graphqlArtworkSources(
 
   const meta = artworkMeta(artwork);
   const results = new Map<string, ArtworkSourceFinding>();
-  for (const { requested, token } of matches) {
+  for (const { requested, token, mintIndex } of matches) {
     const key = coordsKey(requested);
     const detail = details.get(key) ?? null;
     const artworkSource =
@@ -183,7 +192,7 @@ async function graphqlArtworkSources(
     results.set(key, {
       coords: requested,
       artworkSource,
-      ...optionalText('title', token.name, detail?.title),
+      ...optionalText('title', token.name, detail?.title, seriesTitle(artwork.title, mintIndex)),
       ...optionalText('description', detail?.description, meta.description),
       ...(meta.artists ? { artists: meta.artists } : {}),
       ...(meta.creditLine ? { creditLine: meta.creditLine } : {}),
@@ -279,6 +288,17 @@ async function kitArtworkSources(
     const finding = results.get(coordsKey(value));
     return finding ? [finding] : [];
   });
+}
+
+/**
+ * seriesTitle names an edition the way Raster names it when the token carries
+ * no metadata name of its own: the artwork title followed by the mint index.
+ * Reproducing that convention keeps generative series -- where every name is
+ * empty -- from arriving as a wall of untitled items.
+ */
+function seriesTitle(artworkTitle: string | undefined, mintIndex: number): string | undefined {
+  const title = artworkTitle?.trim();
+  return title ? `${title} #${String(mintIndex)}` : undefined;
 }
 
 function artworkMeta(artwork: RasterArtworkWithTokens): ArtworkLevelMeta {

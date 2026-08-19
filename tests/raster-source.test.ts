@@ -149,6 +149,8 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
       {
         coords: coords[1],
         artworkSource: 'https://example.com/original-96.svg',
+        // No per-token name, so the edition is titled the way Raster titles it.
+        title: 'Split Logic #1',
         description: 'A study in halves.',
         artists: [{ name: 'Ricky Retouch' }],
         creditLine: 'Raster Editions',
@@ -227,6 +229,25 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
       requests.filter((value) => value.includes('/token/')),
       [`https://kit.raster.art/token/eip155%3A1/${CONTRACT}/96`]
     );
+  });
+
+  test('names a nameless edition by its mint index, and never overrides a real name', async () => {
+    const coords = [ethereumCoords('95'), ethereumCoords('96'), ethereumCoords('97')];
+    const fetchImpl = graphqlAwareFetch([], {
+      graphql: graphqlArtwork({
+        tokens: [
+          graphqlToken('95', { name: 'A Real Name', contentUrl: 'https://example.com/a' }),
+          graphqlToken('96', { name: '', contentUrl: 'https://example.com/b' }),
+          graphqlToken('97', { name: '', contentUrl: 'https://example.com/c' }),
+        ],
+      }),
+    });
+
+    const findings = await resolveRasterArtworkSources(new URL(ARTWORK_URL), coords, fetchImpl);
+
+    assert.equal(findings[0]?.title, 'A Real Name');
+    assert.equal(findings[1]?.title, 'Split Logic #1');
+    assert.equal(findings[2]?.title, 'Split Logic #2');
   });
 
   test('reuses an enrichmentContext enumeration instead of querying again', async () => {
