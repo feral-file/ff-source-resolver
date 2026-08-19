@@ -416,9 +416,17 @@ function browserContentUrl(value: string | null | undefined): string | null {
 }
 
 /**
- * rasterPreviewUrl builds the largest documented playable rendition for a
- * Raster media handler. Animated types use animated AVIF, SVG preserves the
- * original vector, and still images use their largest generated rendition.
+ * rasterPreviewUrl builds a Raster CDN still for use as a thumbnail.
+ *
+ * 700px is the one rendition the CDN actually serves. Measured 2026-08 across
+ * 17 image and gif assets it answered for every one, while the sizes the media
+ * guide documents at the top of each ladder did not: `7200.avif` for `image/2`
+ * 403s everywhere tested, and the `-anim.avif` variants documented for `gif`
+ * and `video` 403 on every asset tried. `svg/1` serves no rendition at all --
+ * neither `original` nor a sized AVIF -- so it yields no thumbnail rather than
+ * a URL that is certain to fail.
+ *
+ * 700px is also the right size on merit: this is a thumbnail, not the work.
  */
 function rasterPreviewUrl(
   previewHash: string | null | undefined,
@@ -429,21 +437,15 @@ function rasterPreviewUrl(
   if (!hash || !/^[A-Fa-f0-9]{8,}$/.test(hash) || !type) {
     return null;
   }
-
-  let filename: string;
-  if (type.startsWith('svg/')) {
-    filename = 'original';
-  } else if (type.startsWith('gif/') || type.startsWith('video/')) {
-    filename = '1500-anim.avif';
-  } else if (type === 'image/1') {
-    filename = '1500.avif';
-  } else if (type.startsWith('image/') || type.startsWith('image-pixelart/')) {
-    filename = '7200.avif';
-  } else {
+  const served =
+    type.startsWith('image/') ||
+    type.startsWith('image-pixelart/') ||
+    type.startsWith('gif/') ||
+    type.startsWith('video/');
+  if (!served) {
     return null;
   }
-
-  return `${RASTER_BITS_ORIGIN}/${hash.slice(0, 4)}/${hash}/${filename}`;
+  return `${RASTER_BITS_ORIGIN}/${hash.slice(0, 4)}/${hash}/700.avif`;
 }
 
 function graphqlTokenKey(token: RasterGraphqlToken): string | null {

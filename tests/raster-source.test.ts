@@ -38,7 +38,7 @@ describe('Raster token URL source enrichment', () => {
         artworkSource: 'https://ipfs.verse.works/ipfs/original-video',
         title: 'Split Logic #95',
         description: 'A study in halves.',
-        thumbnail: 'https://bits.raster.art/be18/be1857f37e4eb4a5/1500-anim.avif',
+        thumbnail: 'https://bits.raster.art/be18/be1857f37e4eb4a5/700.avif',
         metadataUri: 'https://kit.raster.art/meta/95.json',
       },
     ]);
@@ -102,7 +102,7 @@ describe('Raster token URL source enrichment', () => {
 
     assert.equal(
       findings[0]?.artworkSource,
-      'https://bits.raster.art/bbbb/bbbbbbbbbbbbbbbb/7200.avif'
+      'https://bits.raster.art/bbbb/bbbbbbbbbbbbbbbb/700.avif'
     );
   });
 });
@@ -143,7 +143,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         description: 'A study in halves.',
         artists: [{ name: 'Ricky Retouch' }],
         creditLine: 'Raster Editions',
-        thumbnail: 'https://bits.raster.art/be18/be1857f37e4eb4a5/1500-anim.avif',
+        thumbnail: 'https://bits.raster.art/be18/be1857f37e4eb4a5/700.avif',
         standard: 'erc721',
       },
       {
@@ -152,7 +152,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         description: 'A study in halves.',
         artists: [{ name: 'Ricky Retouch' }],
         creditLine: 'Raster Editions',
-        thumbnail: 'https://bits.raster.art/0123/0123456789abcdef/original',
+        // svg/1 serves no CDN rendition, so no thumbnail is emitted.
         standard: 'erc721',
       },
     ]);
@@ -293,7 +293,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
 
     assert.equal(
       findings[0]?.artworkSource,
-      'https://bits.raster.art/fedc/fedcba9876543210/7200.avif'
+      'https://bits.raster.art/fedc/fedcba9876543210/700.avif'
     );
   });
 
