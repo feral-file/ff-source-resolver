@@ -387,7 +387,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
       artists: [],
       platform: null,
       tokens: {
-        totalCount: 4,
+        totalCount: 2,
         pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
         nodes: [
           {
@@ -401,20 +401,53 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         ],
       },
     };
+    const withTokens = (tokens: object): object => ({
+      data: { artworkBySlug: { ...firstPage, tokens } },
+    });
+    const row = (tokenId: string): object => ({
+      chainId: 'eip155:1',
+      contractAddress: CONTRACT,
+      tokenId,
+      tokenStandard: 'ERC721',
+      name: '',
+      media: { contentUrl: 'https://example.com/b', previewHash: null, previewType: null },
+    });
     const damagedSecondPages: Array<[string, object]> = [
       ['field-level errors beside data', { errors: [{ message: 'boom' }], data: { artworkBySlug: firstPage } }],
       ['null token connection', { data: { artworkBySlug: { ...firstPage, tokens: null } } }],
-      ['missing pageInfo', { data: { artworkBySlug: { ...firstPage, tokens: { totalCount: 4, nodes: [] } } } }],
+      ['missing pageInfo', withTokens({ totalCount: 4, nodes: [] })],
       [
         'hasNextPage with no cursor',
-        {
-          data: {
-            artworkBySlug: {
-              ...firstPage,
-              tokens: { totalCount: 4, pageInfo: { hasNextPage: true, endCursor: null }, nodes: [] },
-            },
-          },
-        },
+        withTokens({ totalCount: 4, pageInfo: { hasNextPage: true, endCursor: null }, nodes: [] }),
+      ],
+      [
+        'missing totalCount',
+        withTokens({ pageInfo: { hasNextPage: false, endCursor: null }, nodes: [row('96')] }),
+      ],
+      [
+        'non-numeric totalCount',
+        withTokens({ totalCount: '4', pageInfo: { hasNextPage: false, endCursor: null }, nodes: [row('96')] }),
+      ],
+      [
+        'missing hasNextPage',
+        withTokens({ totalCount: 2, pageInfo: { endCursor: null }, nodes: [row('96')] }),
+      ],
+      [
+        // The connection says four tokens exist and hands back two.
+        'terminal page short of totalCount',
+        withTokens({ totalCount: 4, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [row('96')] }),
+      ],
+      [
+        'row without a token id',
+        withTokens({
+          totalCount: 2,
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [{ ...row('96'), tokenId: null }],
+        }),
+      ],
+      [
+        'null row',
+        withTokens({ totalCount: 2, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [null] }),
       ],
     ];
 
