@@ -154,7 +154,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         description: 'A study in halves.',
         artists: [{ name: 'Ricky Retouch' }],
         creditLine: 'Raster Editions',
-        // svg/1 serves no CDN rendition, so no thumbnail is emitted.
+        thumbnail: 'https://bits.raster.art/0123/0123456789abcdef/original',
         standard: 'erc721',
       },
     ]);
@@ -194,8 +194,8 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
   });
 
   test('falls back to a kit detail only when neither contentUrl nor preview is usable', async () => {
-    // svg/1 is the case with no CDN rendition, so the detail lookup earns its
-    // request there and nowhere else.
+    // An unmapped handler key has no rendition this package can name, so the
+    // detail lookup earns its request there and nowhere else.
     const coords = [ethereumCoords('96')];
     const requests: string[] = [];
     const fetchImpl = graphqlAwareFetch(requests, {
@@ -204,7 +204,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
           graphqlToken('96', {
             contentUrl: '',
             previewHash: '0123456789abcdef',
-            previewType: 'svg/1',
+            previewType: 'hologram/9',
           }),
         ],
       }),

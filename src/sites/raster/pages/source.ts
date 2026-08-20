@@ -444,17 +444,17 @@ function browserContentUrl(value: string | null | undefined): string | null {
 }
 
 /**
- * rasterPreviewUrl builds a Raster CDN still for use as a thumbnail.
+ * rasterPreviewUrl builds a Raster CDN still for use as a thumbnail, following
+ * the rendition table in Raster's media guide.
  *
- * 700px is the one rendition the CDN actually serves. Measured 2026-08 across
- * 17 image and gif assets it answered for every one, while the sizes the media
- * guide documents at the top of each ladder did not: `7200.avif` for `image/2`
- * 403s everywhere tested, and the `-anim.avif` variants documented for `gif`
- * and `video` 403 on every asset tried. `svg/1` serves no rendition at all --
- * neither `original` nor a sized AVIF -- so it yields no thumbnail rather than
- * a URL that is certain to fail.
+ * 700px is offered by every handler that has sized renditions, and is the right
+ * size on merit: this is a thumbnail, not the work. The two exceptions come
+ * from the table itself -- `svg/1` publishes only the literal `original`, and
+ * `gif/2` publishes only animated variants.
  *
- * 700px is also the right size on merit: this is a thumbnail, not the work.
+ * A note for anyone verifying these URLs by hand: bits.raster.art answers 403
+ * to a default curl User-Agent on paths its CDN has not cached, which reads
+ * exactly like a missing rendition. Send a browser User-Agent when checking.
  */
 function rasterPreviewUrl(
   previewHash: string | null | undefined,
@@ -465,15 +465,24 @@ function rasterPreviewUrl(
   if (!hash || !/^[A-Fa-f0-9]{8,}$/.test(hash) || !type) {
     return null;
   }
-  const served =
+
+  let file: string;
+  if (type.startsWith('svg/')) {
+    file = 'original';
+  } else if (type === 'gif/2') {
+    file = '700-anim.avif';
+  } else if (
     type.startsWith('image/') ||
     type.startsWith('image-pixelart/') ||
     type.startsWith('gif/') ||
-    type.startsWith('video/');
-  if (!served) {
+    type.startsWith('video/')
+  ) {
+    file = '700.avif';
+  } else {
     return null;
   }
-  return `${RASTER_BITS_ORIGIN}/${hash.slice(0, 4)}/${hash}/700.avif`;
+
+  return `${RASTER_BITS_ORIGIN}/${hash.slice(0, 4)}/${hash}/${file}`;
 }
 
 function graphqlTokenKey(token: RasterGraphqlToken): string | null {
