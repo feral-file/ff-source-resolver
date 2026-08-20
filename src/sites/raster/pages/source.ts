@@ -106,15 +106,13 @@ async function graphqlArtworkSources(
   const remaining = requestedCoords(coords);
   const matches: Array<{ requested: TokenCoords; token: RasterGraphqlToken; mintIndex: number }> =
     [];
-  let position = 0;
   for (const token of artwork.tokens) {
-    // The tokens connection is ordered by mint index, so a token's position in
-    // it is its index. Raster exposes the index itself only over REST, and
-    // measured across six series with no per-token name (600 tokens) the two
-    // agree exactly; the series whose index is 1-based all carry names, so the
+    // The connection is ordered by mint index, so a token's ordinal in it is
+    // its index. Raster exposes the index itself only over REST, and measured
+    // across six series with no per-token name (600 tokens) the two agree
+    // exactly; the series whose index is 1-based all carry names, so the
     // derivation below never runs for them.
-    const mintIndex = position;
-    position += 1;
+    const mintIndex = token.mintIndex;
     const key = graphqlTokenKey(token);
     const requested = key ? remaining.get(key) : undefined;
     if (key && requested) {

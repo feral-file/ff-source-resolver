@@ -250,6 +250,29 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     assert.equal(findings[2]?.title, 'Split Logic #2');
   });
 
+  test('keeps connection ordinals when an earlier row is unreadable', async () => {
+    // A row Raster describes without a token id is skipped, but it still holds
+    // its place: the nameless token after it is the connection's second, and
+    // must be titled #1 rather than inheriting the skipped row's #0.
+    const fetchImpl = graphqlAwareFetch([], {
+      graphql: graphqlArtwork({
+        tokens: [
+          { ...graphqlToken('missing', {}), tokenId: null },
+          graphqlToken('96', { name: '', contentUrl: 'https://example.com/original-96' }),
+        ],
+      }),
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(ARTWORK_URL),
+      [ethereumCoords('96')],
+      fetchImpl
+    );
+
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0]?.title, 'Split Logic #1');
+  });
+
   test('reuses an enrichmentContext enumeration instead of querying again', async () => {
     const coords = [ethereumCoords('95')];
     const requests: string[] = [];
@@ -267,6 +290,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
             artists: [{ name: 'Ricky Retouch' }],
             tokens: [
               {
+                mintIndex: 0,
                 chainId: 'eip155:1',
                 contractAddress: CONTRACT,
                 tokenId: '95',

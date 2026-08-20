@@ -14,6 +14,12 @@ const RASTER_GRAPHQL_MAX_PAGES = 20;
  * callers decide how to map chains and standards.
  */
 export interface RasterGraphqlToken {
+  /**
+   * Position in the artwork's token connection, which Raster orders by mint
+   * index. Assigned before unusable rows are dropped, so it stays the ordinal
+   * Raster would report even when a row between two tokens is unreadable.
+   */
+  mintIndex: number;
   chainId: string | null;
   contractAddress: string | null;
   tokenId: string;
@@ -105,6 +111,7 @@ export async function resolveRasterArtworkWithTokens(
   const tokens: RasterGraphqlToken[] = [];
   let usable = 0;
   let hasMore = false;
+  let ordinal = 0;
 
   for (let page = 0; page < RASTER_GRAPHQL_MAX_PAGES; page += 1) {
     // Always ask for a full page. A limit counts tokens the caller can use,
@@ -161,11 +168,17 @@ export async function resolveRasterArtworkWithTokens(
       };
     }
     for (const row of connection.nodes) {
-      // A row without a token id is Raster describing a token in a way this
-      // package cannot use. That is their data to get right; taking the rows
-      // that do work beats refusing the whole series over one of them.
+      // The ordinal is claimed before the row is judged. A row without a token
+      // id is Raster describing a token in a way this package cannot use --
+      // their data to get right, and taking the rows that do work beats
+      // refusing the whole series over one of them -- but it still occupies a
+      // place in the connection, and the tokens after it keep the positions
+      // Raster gave them.
+      const mintIndex = ordinal;
+      ordinal += 1;
       if (!row || row.tokenId == null) continue;
       const token: RasterGraphqlToken = {
+        mintIndex,
         chainId: row.chainId ?? null,
         contractAddress: row.contractAddress ?? null,
         tokenId: String(row.tokenId),
