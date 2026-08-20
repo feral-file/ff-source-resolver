@@ -377,47 +377,20 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     assert.ok(maxInFlight <= 50, `max in-flight was ${maxInFlight}`);
   });
 
-  test('falls back to the kit listing with detail lookups when GraphQL is down', async () => {
+  test('returns nothing when GraphQL is unavailable', async () => {
+    // Raster's REST and GraphQL APIs are one backend, so a GraphQL outage is a
+    // Raster outage: there is no second source to fall back to.
     const coords = [ethereumCoords('95')];
     const requests: string[] = [];
     const fetchImpl = (async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString();
-      requests.push(url);
-      if (url === GRAPHQL_URL) {
-        return new Response(null, { status: 503 });
-      }
-      if (url.includes('/artwork/2886465/tokens')) {
-        return Response.json({
-          tokens: [
-            {
-              chain_id: 'eip155:1',
-              contract_address: CONTRACT,
-              token_id: '95',
-              name: 'Split Logic #95',
-              metadata: { preview_hash: 'be1857f37e4eb4a5', preview_type: 'video/2' },
-            },
-          ],
-          cursor: 1,
-        });
-      }
-      if (url.includes(`/token/eip155%3A1/${CONTRACT}/95`)) {
-        return Response.json({
-          metadata: { content_url: 'https://generator.example/95' },
-        });
-      }
-      return new Response(null, { status: 404 });
+      requests.push(input.toString());
+      return new Response(null, { status: 503 });
     }) as typeof fetch;
 
-    const findings = await resolveRasterArtworkSources(
-      new URL(ARTWORK_URL),
-      coords,
-      fetchImpl,
-      { html: '<script>{"artworkId":2886465}</script>' }
-    );
+    const findings = await resolveRasterArtworkSources(new URL(ARTWORK_URL), coords, fetchImpl);
 
-    assert.equal(findings[0]?.artworkSource, 'https://generator.example/95');
-    assert.equal(findings[0]?.title, 'Split Logic #95');
-    assert.ok(requests.every((value) => !value.startsWith('https://raster.art/')));
+    assert.deepEqual(findings, []);
+    assert.deepEqual(requests, [GRAPHQL_URL]);
   });
 
   test('does not pair differently cased Tezos contracts', async () => {

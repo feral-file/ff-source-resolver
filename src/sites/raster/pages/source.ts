@@ -5,17 +5,12 @@ import type {
 } from '../../../types';
 import { rasterSupportedChain } from '../chain';
 import type { RasterArtworkWithTokens, RasterGraphqlToken } from '../graphql';
-import {
-  rasterEnrichmentArtwork,
-  resolveRasterArtworkBySlug,
-  resolveRasterArtworkWithTokens,
-} from '../graphql';
-import { extractRasterArtworkId, parseRasterArtwork } from './artwork';
+import { rasterEnrichmentArtwork, resolveRasterArtworkWithTokens } from '../graphql';
+import { parseRasterArtwork } from './artwork';
 import { parseRasterToken } from './token';
 
 const RASTER_KIT_ORIGIN = 'https://kit.raster.art';
 const RASTER_BITS_ORIGIN = 'https://bits.raster.art';
-const MAX_ARTWORK_PAGES = 20;
 /**
  * Kit token-detail lookups run 50 at a time: parallel enough that a large
  * webapp series finishes in a handful of rounds, bounded enough not to dogpile
@@ -36,19 +31,6 @@ interface RasterTokenDetail {
   title?: string | null;
   description?: string | null;
   metadata?: RasterMediaMetadata | null;
-}
-
-interface RasterArtworkToken {
-  chain_id?: string;
-  contract_address?: string;
-  token_id?: string | number;
-  name?: string | null;
-  metadata?: RasterMediaMetadata | null;
-}
-
-interface RasterArtworkTokenPage {
-  tokens?: RasterArtworkToken[];
-  cursor?: number | string | null;
 }
 
 /**
@@ -109,23 +91,7 @@ export async function resolveRasterArtworkSources(
   const artwork =
     rasterEnrichmentArtwork(context?.enrichmentContext) ??
     (await resolveRasterArtworkWithTokens(parsedArtwork.slug, fetchImpl));
-  if (artwork) {
-    return graphqlArtworkSources(artwork, coords, fetchImpl);
-  }
-
-  // REST fallback: GraphQL is unavailable, so recover the numeric artwork id
-  // (from caller-provided HTML or the lightweight id query) and walk the kit
-  // listing. Listing rows carry no content_url, so details are fetched for
-  // every matched token.
-  const html = context?.html ?? null;
-  let artworkId = html ? extractRasterArtworkId(html) : null;
-  if (!artworkId) {
-    artworkId = (await resolveRasterArtworkBySlug(parsedArtwork.slug, fetchImpl))?.id ?? null;
-  }
-  if (!artworkId) {
-    return [];
-  }
-  return kitArtworkSources(artworkId, coords, fetchImpl);
+  return artwork ? graphqlArtworkSources(artwork, coords, fetchImpl) : [];
 }
 
 /**
@@ -204,83 +170,6 @@ async function graphqlArtworkSources(
       ),
       ...optionalMetadataUri(detail?.metadata),
       ...optionalStandard(token.tokenStandard),
-    });
-  }
-
-  return coords.flatMap((value) => {
-    const finding = results.get(coordsKey(value));
-    return finding ? [finding] : [];
-  });
-}
-
-/**
- * kitArtworkSources is the REST-only fallback: kit listing for matching plus
- * kit details for media, titles, and metadata URLs.
- */
-async function kitArtworkSources(
-  artworkId: string,
-  coords: readonly TokenCoords[],
-  fetchImpl: typeof fetch
-): Promise<ArtworkSourceFinding[]> {
-  const remaining = requestedCoords(coords);
-  const matches: Array<{ requested: TokenCoords; token: RasterArtworkToken }> = [];
-  let cursor = '0';
-
-  for (let pageCount = 0; pageCount < MAX_ARTWORK_PAGES && remaining.size > 0; pageCount += 1) {
-    const apiUrl = new URL(`/artwork/${encodeURIComponent(artworkId)}/tokens`, RASTER_KIT_ORIGIN);
-    apiUrl.searchParams.set('cursor', cursor);
-    apiUrl.searchParams.set('page_size', '100');
-    apiUrl.searchParams.set('sort', 'listing');
-    apiUrl.searchParams.set('sort_direction', 'asc');
-
-    const page = await fetchRasterUrlJson<RasterArtworkTokenPage>(apiUrl, fetchImpl);
-    const tokens = page?.tokens ?? [];
-    if (tokens.length === 0) {
-      break;
-    }
-    for (const token of tokens) {
-      const key = rasterTokenKey(token);
-      const requested = key ? remaining.get(key) : undefined;
-      if (key && requested) {
-        remaining.delete(key);
-        matches.push({ requested, token });
-      }
-    }
-
-    const nextCursor = page?.cursor == null ? '' : String(page.cursor);
-    if (!nextCursor || nextCursor === cursor) {
-      break;
-    }
-    cursor = nextCursor;
-  }
-
-  const details = new Map<string, RasterTokenDetail | null>();
-  await forEachBatch(matches, async ({ requested, token }) => {
-    const detail = await fetchRasterTokenByChainId(
-      token.chain_id ?? null,
-      token.contract_address ?? null,
-      token.token_id == null ? null : String(token.token_id),
-      fetchImpl
-    );
-    details.set(coordsKey(requested), detail);
-  });
-
-  const results = new Map<string, ArtworkSourceFinding>();
-  for (const { requested, token } of matches) {
-    const key = coordsKey(requested);
-    const detail = details.get(key) ?? null;
-    const artworkSource =
-      (detail ? mediaSource(detail.metadata) : null) ?? mediaSource(token.metadata);
-    if (!artworkSource) {
-      continue;
-    }
-    results.set(key, {
-      coords: requested,
-      artworkSource,
-      ...optionalText('title', detail?.title, token.name),
-      ...optionalText('description', detail?.description),
-      ...optionalThumbnail(token.metadata ?? detail?.metadata),
-      ...optionalMetadataUri(detail?.metadata),
     });
   }
 
@@ -494,18 +383,6 @@ function graphqlTokenKey(token: RasterGraphqlToken): string | null {
     chain,
     contract: token.contractAddress,
     tokenId: token.tokenId,
-  });
-}
-
-function rasterTokenKey(token: RasterArtworkToken): string | null {
-  const chain = rasterSupportedChain(token.chain_id);
-  if (!chain || !token.contract_address || token.token_id == null) {
-    return null;
-  }
-  return coordsKey({
-    chain,
-    contract: token.contract_address,
-    tokenId: String(token.token_id),
   });
 }
 

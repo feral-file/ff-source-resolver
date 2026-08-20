@@ -8,13 +8,12 @@ import { sourceTokenResult } from '../../helpers';
 import { limitTokenFindings, tokenLimitTarget } from '../../limits';
 import { rasterSupportedChain } from './chain';
 import {
-  extractRasterArtworkId,
   extractRasterArtworkTokenFromHtml,
   extractRasterArtworkTokensFromHtml,
   parseRasterArtwork,
 } from './pages/artwork';
 import type { RasterEnrichmentContext } from './graphql';
-import { resolveRasterArtworkBySlug, resolveRasterArtworkWithTokens } from './graphql';
+import { resolveRasterArtworkWithTokens } from './graphql';
 import { resolveRasterArtworkSources } from './pages/source';
 import { parseRasterToken } from './pages/token';
 
@@ -38,6 +37,9 @@ export const rasterAdapter: SourceSiteAdapter = {
       }
     );
   },
+  // raster.art answers non-browser fetchers with a 429 challenge, so the page
+  // request is a guaranteed miss; everything comes from the keyless API.
+  skipStaticFetch: true,
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
     return extractRasterArtworkTokenFromHtml(url, html);
   },
@@ -49,15 +51,6 @@ export const rasterAdapter: SourceSiteAdapter = {
   },
   resolveArtworkSources: resolveRasterArtworkSources,
 };
-
-interface RasterTokenPage {
-  tokens?: Array<{
-    chain_id?: string;
-    contract_address?: string;
-    token_id?: string | number;
-  }>;
-  cursor?: number | string | null;
-}
 
 async function resolveRasterArtworkTokensFromApi(
   url: URL,
@@ -99,83 +92,6 @@ async function resolveRasterArtworkTokensFromApi(
     }
   }
 
-  return resolveRasterArtworkTokensFromKit(parsed.slug, fetchImpl, context);
+  return { findings: [] };
 }
 
-/**
- * resolveRasterArtworkTokensFromKit is the REST fallback enumeration, kept for
- * the day Raster's GraphQL endpoint starts demanding credentials. It needs the
- * numeric artwork id, which comes from already-fetched page HTML when the
- * caller has it and from the lightweight GraphQL id query otherwise.
- */
-async function resolveRasterArtworkTokensFromKit(
-  slug: string,
-  fetchImpl: typeof fetch,
-  context?: ResolveTokensFromApiContext
-): Promise<TokenFindingsResult> {
-  const html = context?.html ?? null;
-  let artworkId = html ? extractRasterArtworkId(html) : null;
-  let apiTitle: string | undefined;
-  if (!artworkId) {
-    const artwork = await resolveRasterArtworkBySlug(slug, fetchImpl);
-    if (!artwork) {
-      return { findings: [] };
-    }
-    artworkId = artwork.id;
-    apiTitle = artwork.title;
-  }
-
-  const results: ParsedFindInput[] = [];
-  let cursor = '0';
-  let hasMore = false;
-  const targetCount = tokenLimitTarget(context?.limit);
-  for (let pageCount = 0; pageCount < 20; pageCount += 1) {
-    const pageLimit =
-      targetCount == null ? 100 : Math.min(100, Math.max(1, targetCount - results.length));
-    const apiUrl = new URL(`/artwork/${artworkId}/tokens`, 'https://kit.raster.art');
-    apiUrl.searchParams.set('cursor', cursor);
-    apiUrl.searchParams.set('page_size', String(pageLimit));
-    apiUrl.searchParams.set('sort', 'listing');
-    apiUrl.searchParams.set('sort_direction', 'asc');
-
-    const response = await fetchImpl(apiUrl.toString(), { headers: { Accept: 'application/json' } });
-    if (!response.ok) {
-      break;
-    }
-    const body = (await response.json().catch(() => null)) as RasterTokenPage | null;
-    const tokens = body?.tokens ?? [];
-    if (tokens.length === 0) {
-      break;
-    }
-    for (const token of tokens) {
-      const result = rasterApiToken(token);
-      if (result) {
-        results.push(result);
-        if (targetCount != null && results.length >= targetCount) {
-          hasMore = true;
-          break;
-        }
-      }
-    }
-    if (hasMore) {
-      break;
-    }
-    const nextCursor = body?.cursor == null ? '' : String(body.cursor);
-    if (!nextCursor || nextCursor === cursor) {
-      break;
-    }
-    cursor = nextCursor;
-  }
-  return {
-    findings: limitTokenFindings(results, context?.limit),
-    ...(apiTitle ? { title: apiTitle } : {}),
-    ...(hasMore ? { hasMore } : {}),
-  };
-}
-
-function rasterApiToken(token: NonNullable<RasterTokenPage['tokens']>[number]): ParsedFindInput | null {
-  const chain = rasterSupportedChain(token.chain_id);
-  const contract = token.contract_address ?? '';
-  const tokenId = token.token_id == null ? '' : String(token.token_id);
-  return chain && contract && tokenId ? sourceTokenResult('raster', chain, contract, tokenId) : null;
-}

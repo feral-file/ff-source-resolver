@@ -81,6 +81,15 @@ export interface SourceSiteAdapter {
     fetchImpl: typeof fetch,
     context?: ResolveArtworkSourcesContext
   ): Promise<readonly ArtworkSourceFinding[]>;
+  /**
+   * skipStaticFetch declares that this site is resolved from its API rather
+   * than its pages, so the generic pipeline should not fetch the page first.
+   * Set it where the page request is known to fail -- raster.art answers
+   * non-browser fetchers with a bot-protection challenge -- so the resolver
+   * does not spend a request on a guaranteed miss. Caller-supplied HTML and
+   * rendered output still reach extractFromHtml as usual.
+   */
+  skipStaticFetch?: boolean;
 }
 
 export interface ResolveTokensFromApiContext {

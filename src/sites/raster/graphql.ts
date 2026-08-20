@@ -2,20 +2,6 @@ const RASTER_GRAPHQL_ENDPOINT = 'https://api.raster.art/graphql';
 const RASTER_GRAPHQL_PAGE_SIZE = 100;
 const RASTER_GRAPHQL_MAX_PAGES = 20;
 
-export interface RasterArtworkRef {
-  id: string;
-  title?: string;
-}
-
-interface RasterArtworkBySlugResponse {
-  data?: {
-    artworkBySlug?: {
-      id?: string | number;
-      title?: string;
-    } | null;
-  };
-}
-
 /**
  * RasterGraphqlToken is one row of the artwork's token connection, kept in
  * Raster's own vocabulary (CAIP-2 chainId, upper-case TokenStandard enum) so
@@ -88,35 +74,6 @@ const RASTER_ARTWORK_WITH_TOKENS_QUERY =
   ' media { contentUrl previewHash previewType } } } } }';
 
 /**
- * resolveRasterArtworkBySlug maps an artwork slug to Raster's numeric artwork
- * id (and title) via the public keyless GraphQL API.
- *
- * Raster's web pages sit behind a Vercel bot-protection checkpoint (observed
- * 2026-07: HTTP 429 challenge page for non-browser fetchers), so the
- * serialized page payload is not a reliable source for the artwork id. The
- * GraphQL API answers without credentials and models not-found as a null
- * query field rather than an HTTP error.
- */
-export async function resolveRasterArtworkBySlug(
-  slug: string,
-  fetchImpl: typeof fetch
-): Promise<RasterArtworkRef | null> {
-  const body = await postRasterGraphql<RasterArtworkBySlugResponse>(
-    fetchImpl,
-    'query ArtworkBySlug($slug: String!) { artworkBySlug(slug: $slug) { id title } }',
-    { slug }
-  );
-  const artwork = body?.data?.artworkBySlug;
-  if (artwork?.id == null) {
-    return null;
-  }
-  return {
-    id: String(artwork.id),
-    ...(artwork.title ? { title: artwork.title } : {}),
-  };
-}
-
-/**
  * resolveRasterArtworkWithTokens resolves an artwork slug to its metadata and
  * full token inventory through the paginated artworkBySlug tokens connection.
  *
@@ -151,9 +108,12 @@ export async function resolveRasterArtworkWithTokens(
       );
     const node: RasterArtworkWithTokensNode | null | undefined = body?.data?.artworkBySlug;
     if (node?.id == null) {
-      // A failed page after a successful one returns the partial inventory
-      // rather than pretending the artwork does not exist.
-      break;
+      // A first-page miss means the artwork does not exist. A later-page
+      // failure means the inventory is incomplete, and there is no honest way
+      // to hand that back: the caller has no signal to distinguish a series
+      // that is 100 tokens long from one whose page two failed, so a silently
+      // short playlist would look exactly like a correct one. Fail instead.
+      return null;
     }
     if (!artwork) {
       artwork = {
@@ -192,8 +152,11 @@ export async function resolveRasterArtworkWithTokens(
       break;
     }
     after = pageInfo?.endCursor ?? null;
-    // Reaching the page cap with more pages pending is still hasMore.
-    hasMore = page === RASTER_GRAPHQL_MAX_PAGES - 2 ? true : hasMore;
+    // Running out of pages with more pending is the same incompleteness as a
+    // failed page, and callers cannot see the difference either.
+    if (page === RASTER_GRAPHQL_MAX_PAGES - 1) {
+      return null;
+    }
   }
 
   if (!artwork) {

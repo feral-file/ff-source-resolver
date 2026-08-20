@@ -50,7 +50,7 @@ export async function resolveTokenInfo(
     return { kind: 'not-found', reason: 'No static page extractor is registered for this site.' };
   }
 
-  const fetched = await fetchStaticHtml(url, options.fetch);
+  const fetched = site.skipStaticFetch === true ? null : await fetchStaticHtml(url, options.fetch);
   if (fetched) {
     const domParsed = normalizeParsedFindInput(site.extractFromHtml(url, fetched));
     if (domParsed?.kind === 'token') {
@@ -116,7 +116,7 @@ export async function resolveTokenInfos(
     return { kind: 'not-found', reason: 'No source adapter is registered for this site.' };
   }
 
-  const fetched = await fetchStaticHtml(url, options.fetch);
+  const fetched = site.skipStaticFetch === true ? null : await fetchStaticHtml(url, options.fetch);
   const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
   if (domTokens.length > 0) {
     const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched, limit);

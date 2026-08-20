@@ -1326,27 +1326,12 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
-  test('Raster artwork resolves token arrays through the public kit API', async () => {
-    const result = await resolveTokenInfos('https://raster.art/artwork/split-logic-by-ricky-retouch', {
-      fetch: rasterApiFetch() as typeof fetch,
-    });
-
-    assert.equal(result.kind, 'tokens');
-    if (result.kind !== 'tokens') {
-      throw new Error('narrowing');
-    }
-    assert.equal(result.method, 'api');
-    assert.equal(result.title, 'Split Logic by Ricky Retouch');
-    assert.deepEqual(result.coords, [
-      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '95' },
-      { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '100' },
-    ]);
-  });
-
-  test('Raster artwork falls back to GraphQL slug lookup when the page is bot-challenged', async () => {
-    const result = await resolveTokenInfos('https://raster.art/artwork/split-logic-by-ricky-retouch', {
-      fetch: rasterChallengedApiFetch() as typeof fetch,
-    });
+  test('Raster artwork resolves token arrays from the keyless GraphQL API', async () => {
+    const requests: string[] = [];
+    const result = await resolveTokenInfos(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: rasterGraphqlFetch(requests) as typeof fetch }
+    );
 
     assert.equal(result.kind, 'tokens');
     if (result.kind !== 'tokens') {
@@ -1358,28 +1343,14 @@ describe('resolveTokenInfos collection support', () => {
       { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '95' },
       { chain: 'ethereum', contract: '0xf5705202462f066ac55c293f5798ae027b2f27b5', tokenId: '100' },
     ]);
+    // The adapter opts out of the static page fetch, so GraphQL is the only
+    // host contacted -- the raster.art request would have been a known 429.
+    assert.deepEqual(requests, ['https://api.raster.art/graphql']);
   });
 
-  test('Raster Tezos artwork keeps its tokens through kit API enumeration', async () => {
+  test('Raster Tezos artwork keeps its tokens through GraphQL enumeration', async () => {
     const result = await resolveTokenInfos('https://raster.art/artwork/plotterns-by-nt-worm', {
-      fetch: rasterApiFetch() as typeof fetch,
-    });
-
-    assert.equal(result.kind, 'tokens');
-    if (result.kind !== 'tokens') {
-      throw new Error('narrowing');
-    }
-    assert.equal(result.method, 'api');
-    assert.deepEqual(result.coords, [
-      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576664' },
-      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576665' },
-      { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576667' },
-    ]);
-  });
-
-  test('Raster Tezos artwork keeps its tokens when the page is bot-challenged', async () => {
-    const result = await resolveTokenInfos('https://raster.art/artwork/plotterns-by-nt-worm', {
-      fetch: rasterChallengedApiFetch() as typeof fetch,
+      fetch: rasterGraphqlFetch() as typeof fetch,
     });
 
     assert.equal(result.kind, 'tokens');
@@ -1393,6 +1364,17 @@ describe('resolveTokenInfos collection support', () => {
       { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576665' },
       { chain: 'tezos', contract: 'KT1U6EHmNxJTkvaWJ4ThczG4FSDaHC21ssvi', tokenId: '1576667' },
     ]);
+  });
+
+  test('Raster artwork reports not-found when GraphQL is unavailable', async () => {
+    // REST and GraphQL are the same Raster backend, so there is no fallback to
+    // reach for: a GraphQL outage is a Raster outage.
+    const result = await resolveTokenInfos(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: (async () => new Response(null, { status: 503 })) as typeof fetch }
+    );
+
+    assert.equal(result.kind, 'not-found');
   });
 
   test('Raster artwork resolves coordinates and artwork sources from one GraphQL enumeration', async () => {
@@ -1443,9 +1425,9 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
-  test('Raster artwork reports not-found when the page is challenged and GraphQL misses', async () => {
+  test('Raster artwork reports not-found for an unknown slug', async () => {
     const result = await resolveTokenInfos('https://raster.art/artwork/no-such-artwork', {
-      fetch: rasterChallengedApiFetch() as typeof fetch,
+      fetch: rasterGraphqlFetch() as typeof fetch,
     });
 
     assert.equal(result.kind, 'not-found');
@@ -1840,6 +1822,14 @@ describe('Verse DOM and headless extraction', () => {
 });
 
 describe('Raster DOM and headless extraction', () => {
+  // Raster sets skipStaticFetch, so page markup only ever reaches the resolver
+  // through a renderer; driving these through htmlFetch would assert nothing.
+  const rendererFor = (html: string): HeadlessPageRenderer => ({
+    async render(): Promise<string> {
+      return html;
+    },
+  });
+
   test('extracts Raster token paths from rendered artwork-card scopes', async () => {
     const outsideContract = '0x1111111111111111111111111111111111111111';
     const html = [
@@ -1849,13 +1839,13 @@ describe('Raster DOM and headless extraction', () => {
 
     const result = await resolveTokenInfo(
       'https://raster.art/artwork/split-logic-by-ricky-retouch',
-      { fetch: htmlFetch(html) as typeof fetch }
+      { fetch: htmlFetch('') as typeof fetch, renderer: rendererFor(html) }
     );
     assert.equal(result.kind, 'token');
     if (result.kind !== 'token') {
       throw new Error('narrowing');
     }
-    assert.equal(result.method, 'dom');
+    assert.equal(result.method, 'headless');
     assert.deepEqual(result.coords, {
       chain: 'ethereum',
       contract: ETH_CONTRACT,
@@ -1874,7 +1864,7 @@ describe('Raster DOM and headless extraction', () => {
 
     const result = await resolveTokenInfo(
       'https://raster.art/artwork/split-logic-by-ricky-retouch',
-      { fetch: htmlFetch(html) as typeof fetch }
+      { fetch: htmlFetch('') as typeof fetch, renderer: rendererFor(html) }
     );
 
     assert.equal(result.kind, 'not-found');
@@ -1893,7 +1883,7 @@ describe('Raster DOM and headless extraction', () => {
 
     const result = await resolveTokenInfo(
       'https://raster.art/artwork/split-logic-by-ricky-retouch',
-      { fetch: htmlFetch(html) as typeof fetch }
+      { fetch: htmlFetch('') as typeof fetch, renderer: rendererFor(html) }
     );
 
     assert.equal(result.kind, 'not-found');
@@ -1908,7 +1898,7 @@ describe('Raster DOM and headless extraction', () => {
 
     const result = await resolveTokenInfo(
       'https://raster.art/artwork/split-logic-by-ricky-retouch',
-      { fetch: htmlFetch(html) as typeof fetch }
+      { fetch: htmlFetch('') as typeof fetch, renderer: rendererFor(html) }
     );
 
     assert.equal(result.kind, 'not-found');
@@ -2742,61 +2732,10 @@ const RASTER_FIXTURE_ARTWORKS: readonly RasterFixtureArtwork[] = [
   },
 ];
 
-function rasterApiFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
-  return async (input: string | URL | Request): Promise<Response> => {
-    const url = typeof input === 'string' ? input : input.toString();
-    const page = RASTER_FIXTURE_ARTWORKS.find(
-      (artwork) => url === `https://raster.art/artwork/${artwork.slug}`
-    );
-    if (page) {
-      return new Response(
-        `<html><head><title>${page.pageTitle}</title></head>` +
-          `<body>{"children":[["$","$L25",null,{"artworkId\\":${page.id}}]]}</body></html>`,
-        {
-          status: 200,
-          headers: { 'Content-Type': 'text/html' },
-        }
-      );
-    }
-    return rasterKitTokensResponse(url) ?? new Response('not found', { status: 404 });
-  };
-}
-
 /**
- * rasterChallengedApiFetch simulates raster.art behind the Vercel bot-protection
- * checkpoint: artwork pages answer 429 with a challenge document, while the
- * keyless GraphQL and kit APIs stay reachable.
- */
-function rasterChallengedApiFetch(): (
-  input: string | URL | Request,
-  init?: RequestInit
-) => Promise<Response> {
-  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === 'string' ? input : input.toString();
-    if (url.startsWith('https://raster.art/artwork/')) {
-      return new Response(
-        '<html><head><title>Vercel Security Checkpoint</title></head><body></body></html>',
-        { status: 429, headers: { 'Content-Type': 'text/html' } }
-      );
-    }
-    if (url === 'https://api.raster.art/graphql') {
-      const body = JSON.parse(String(init?.body ?? '{}')) as {
-        variables?: { slug?: string };
-      };
-      const match = RASTER_FIXTURE_ARTWORKS.find(
-        (artwork) => artwork.slug === body.variables?.slug
-      );
-      const artwork = match ? { id: match.id, title: match.apiTitle } : null;
-      return Response.json({ data: { artworkBySlug: artwork } });
-    }
-    return rasterKitTokensResponse(url) ?? new Response('not found', { status: 404 });
-  };
-}
-
-/**
- * rasterGraphqlFirstFetch simulates the GraphQL-first flow: the artwork page is
- * bot-challenged, the paginated artworkBySlug query answers with metadata and
- * the token connection, and kit serves only per-token details.
+ * rasterGraphqlFirstFetch drives the full enrichment path: the artwork query
+ * answers with one token that has an original content URL and one that has
+ * neither content URL nor preview, so only the second needs a kit detail.
  */
 function rasterGraphqlFirstFetch(
   requests: string[]
@@ -2804,8 +2743,8 @@ function rasterGraphqlFirstFetch(
   return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     requests.push(url);
-    if (url.startsWith('https://raster.art/artwork/')) {
-      return new Response('challenge', { status: 429, headers: { 'Content-Type': 'text/html' } });
+    if (url.startsWith('https://raster.art/')) {
+      throw new Error(`the resolver must not fetch the Raster page: ${url}`);
     }
     if (url === 'https://api.raster.art/graphql') {
       return Response.json({
@@ -2859,26 +2798,49 @@ function rasterGraphqlFirstFetch(
 }
 
 /**
- * rasterKitTokensResponse answers the keyless kit token enumeration endpoint,
- * returning every fixture token on the first cursor and an empty page after it.
+ * rasterGraphqlFetch answers the keyless GraphQL API from the fixtures above.
+ * Raster is resolved API-first, so any request to raster.art itself is a test
+ * failure rather than a challenge to fall back from.
  */
-function rasterKitTokensResponse(url: string): Response | null {
-  for (const artwork of RASTER_FIXTURE_ARTWORKS) {
-    if (!url.startsWith(`https://kit.raster.art/artwork/${artwork.id}/tokens?`)) {
-      continue;
+function rasterGraphqlFetch(
+  requests: string[] = []
+): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    requests.push(url);
+    if (url.startsWith('https://raster.art/') || url.startsWith('https://www.raster.art/')) {
+      throw new Error(`the resolver must not fetch the Raster page: ${url}`);
     }
-    const cursor = new URL(url).searchParams.get('cursor');
-    if (cursor !== '0') {
-      return Response.json({ tokens: [], cursor });
+    if (url !== 'https://api.raster.art/graphql') {
+      return new Response('not found', { status: 404 });
+    }
+    const body = JSON.parse(String(init?.body ?? '{}')) as { variables?: { slug?: string } };
+    const artwork = RASTER_FIXTURE_ARTWORKS.find((a) => a.slug === body.variables?.slug);
+    if (!artwork) {
+      return Response.json({ data: { artworkBySlug: null } });
     }
     return Response.json({
-      tokens: artwork.tokenIds.map((tokenId) => ({
-        chain_id: artwork.chainId,
-        contract_address: artwork.contract,
-        token_id: tokenId,
-      })),
-      cursor: artwork.tokenIds.length,
+      data: {
+        artworkBySlug: {
+          id: String(artwork.id),
+          title: artwork.apiTitle,
+          description: '',
+          artists: [],
+          platform: null,
+          tokens: {
+            totalCount: artwork.tokenIds.length,
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: artwork.tokenIds.map((tokenId) => ({
+              chainId: artwork.chainId,
+              contractAddress: artwork.contract,
+              tokenId,
+              tokenStandard: artwork.chainId.startsWith('eip155:') ? 'ERC721' : 'FA2',
+              name: '',
+              media: { contentUrl: '', previewHash: null, previewType: null },
+            })),
+          },
+        },
+      },
     });
-  }
-  return null;
+  };
 }
