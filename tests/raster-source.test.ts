@@ -290,7 +290,6 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
             artists: [{ name: 'Ricky Retouch' }],
             tokens: [
               {
-                mintIndex: 0,
                 chainId: 'eip155:1',
                 contractAddress: CONTRACT,
                 tokenId: '95',

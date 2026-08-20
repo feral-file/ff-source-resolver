@@ -14,12 +14,6 @@ const RASTER_GRAPHQL_MAX_PAGES = 20;
  * callers decide how to map chains and standards.
  */
 export interface RasterGraphqlToken {
-  /**
-   * Position in the artwork's token connection, which Raster orders by mint
-   * index. Assigned before unusable rows are dropped, so it stays the ordinal
-   * Raster would report even when a row between two tokens is unreadable.
-   */
-  mintIndex: number;
   chainId: string | null;
   contractAddress: string | null;
   tokenId: string;
@@ -111,7 +105,6 @@ export async function resolveRasterArtworkWithTokens(
   const tokens: RasterGraphqlToken[] = [];
   let usable = 0;
   let hasMore = false;
-  let ordinal = 0;
 
   for (let page = 0; page < RASTER_GRAPHQL_MAX_PAGES; page += 1) {
     // Always ask for a full page. A limit counts tokens the caller can use,
@@ -167,26 +160,23 @@ export async function resolveRasterArtworkWithTokens(
         hasMore: false,
       };
     }
+    // Every node keeps its place, including one Raster describes in a way this
+    // package cannot use. Rows are judged where they are consumed -- coordinate
+    // mapping drops them, and the caller's limit does not count them -- so the
+    // array stays the shape of the connection and a token's position in it is
+    // the mint index the connection ordered it by. A missing id becomes an
+    // empty string rather than passing through String(), which would fabricate
+    // the literal "null" and read as a real id downstream.
     for (const row of connection.nodes) {
-      // The ordinal is claimed before the row is judged. A row without a token
-      // id is Raster describing a token in a way this package cannot use --
-      // their data to get right, and taking the rows that do work beats
-      // refusing the whole series over one of them -- but it still occupies a
-      // place in the connection, and the tokens after it keep the positions
-      // Raster gave them.
-      const mintIndex = ordinal;
-      ordinal += 1;
-      if (!row || row.tokenId == null) continue;
       const token: RasterGraphqlToken = {
-        mintIndex,
-        chainId: row.chainId ?? null,
-        contractAddress: row.contractAddress ?? null,
-        tokenId: String(row.tokenId),
-        tokenStandard: row.tokenStandard ?? null,
-        name: row.name ?? null,
-        contentUrl: row.media?.contentUrl ?? null,
-        previewHash: row.media?.previewHash ?? null,
-        previewType: row.media?.previewType ?? null,
+        chainId: row?.chainId ?? null,
+        contractAddress: row?.contractAddress ?? null,
+        tokenId: row?.tokenId == null ? '' : String(row.tokenId),
+        tokenStandard: row?.tokenStandard ?? null,
+        name: row?.name ?? null,
+        contentUrl: row?.media?.contentUrl ?? null,
+        previewHash: row?.media?.previewHash ?? null,
+        previewType: row?.media?.previewType ?? null,
       };
       tokens.push(token);
       if (countsTowardLimit(token)) {
