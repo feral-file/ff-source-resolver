@@ -21,9 +21,16 @@ import { parseRasterToken } from './pages/token';
  * rasterAdapter owns Raster URL and page extraction rules.
  *
  * raster.art itself sits behind a Vercel bot-protection checkpoint that 429s
- * non-browser fetchers, so this adapter never fetches the page on its own:
- * page HTML is only consumed when the caller already holds it, and everything
- * else comes from the keyless GraphQL API with the kit REST API as fallback.
+ * non-browser fetchers, so this adapter never fetches the page on its own and
+ * declares skipStaticFetch: page markup is consumed only when a caller
+ * supplies it or a renderer produces it.
+ *
+ * Collections are enumerated through the keyless GraphQL API alone. Raster's
+ * REST API is the same backend rather than an independent source -- it reports
+ * the same internal id, content size and media hash for a token -- so there is
+ * no fallback to reach for, and a GraphQL outage resolves as not-found. The
+ * kit REST API is still used for per-token media, but only for tokens GraphQL
+ * describes with neither a content URL nor a usable preview.
  */
 export const rasterAdapter: SourceSiteAdapter = {
   source: 'raster',

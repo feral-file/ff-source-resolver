@@ -79,8 +79,15 @@ data:
   this keyless package.
 - SuperRare collection pages through the public SuperRare GraphQL API.
 - Verse series pages through the public Verse GraphQL API.
-- Raster artwork collection pages through Raster's public kit API or rendered
-  token cards.
+- Raster artwork collection pages through Raster's public keyless GraphQL API.
+  This is the only enumeration path: raster.art answers non-browser fetchers
+  with a bot-protection challenge, so the adapter never requests the page, and
+  Raster's REST API is the same backend rather than a second source. A GraphQL
+  outage therefore resolves as not-found. Rendered token cards still reach the
+  DOM extractors through `renderer`, or through `html` when the caller already
+  holds the markup. With `includeArtworkSource`, per-token kit REST requests
+  fill in media only for tokens the GraphQL enumeration could describe with
+  neither a content URL nor a usable preview.
 
 Neort art pages expose off-chain art IDs rather than token coordinates, so they
 remain outside `resolveTokenInfos`. Their keyless page state includes an

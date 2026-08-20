@@ -33,6 +33,7 @@ export interface RasterArtworkWithTokens {
 }
 
 interface RasterArtworkWithTokensResponse {
+  errors?: unknown[];
   data?: {
     artworkBySlug?: {
       id?: string | number;
@@ -63,6 +64,8 @@ interface RasterArtworkWithTokensResponse {
 type RasterArtworkWithTokensNode = NonNullable<
   NonNullable<RasterArtworkWithTokensResponse['data']>['artworkBySlug']
 >;
+type RasterTokenConnection = NonNullable<RasterArtworkWithTokensNode['tokens']>;
+type RasterPageInfo = NonNullable<RasterTokenConnection['pageInfo']>;
 
 const RASTER_ARTWORK_WITH_TOKENS_QUERY =
   'query ArtworkWithTokens($slug: String!, $first: Int!, $after: String) {' +
@@ -109,13 +112,26 @@ export async function resolveRasterArtworkWithTokens(
         RASTER_ARTWORK_WITH_TOKENS_QUERY,
         { slug, first, ...(after ? { after } : {}) }
       );
+    // Every page must be provably whole before its rows join the inventory.
+    // A caller cannot tell a 100-token series from one whose second page came
+    // back damaged, so anything less than a complete page fails the whole
+    // enumeration rather than shortening it silently. GraphQL reports
+    // field-level failures as `errors` beside a 200 body, so a present `data`
+    // is not on its own evidence of a good read.
+    if (Array.isArray(body?.errors) && body.errors.length > 0) {
+      return null;
+    }
     const node: RasterArtworkWithTokensNode | null | undefined = body?.data?.artworkBySlug;
     if (node?.id == null) {
-      // A first-page miss means the artwork does not exist. A later-page
-      // failure means the inventory is incomplete, and there is no honest way
-      // to hand that back: the caller has no signal to distinguish a series
-      // that is 100 tokens long from one whose page two failed, so a silently
-      // short playlist would look exactly like a correct one. Fail instead.
+      return null;
+    }
+    const connection: RasterTokenConnection | null | undefined = node.tokens;
+    if (!connection || !Array.isArray(connection.nodes) || !connection.pageInfo) {
+      return null;
+    }
+    const pageInfo: RasterPageInfo = connection.pageInfo;
+    if (pageInfo.hasNextPage === true && !pageInfo.endCursor) {
+      // More pages exist and there is no way to ask for them.
       return null;
     }
     if (!artwork) {
@@ -131,7 +147,7 @@ export async function resolveRasterArtworkWithTokens(
         hasMore: false,
       };
     }
-    for (const row of node.tokens?.nodes ?? []) {
+    for (const row of connection.nodes) {
       if (!row || row.tokenId == null) continue;
       const token: RasterGraphqlToken = {
         chainId: row.chainId ?? null,
@@ -148,9 +164,7 @@ export async function resolveRasterArtworkWithTokens(
         usable += 1;
       }
     }
-    const pageInfo: NonNullable<RasterArtworkWithTokensNode['tokens']>['pageInfo'] | undefined =
-      node.tokens?.pageInfo;
-    const nextPage = pageInfo?.hasNextPage === true && Boolean(pageInfo.endCursor);
+    const nextPage = pageInfo.hasNextPage === true;
     if (limit != null && usable >= limit) {
       hasMore = nextPage || usable > limit;
       break;
@@ -158,7 +172,7 @@ export async function resolveRasterArtworkWithTokens(
     if (!nextPage) {
       break;
     }
-    after = pageInfo?.endCursor ?? null;
+    after = pageInfo.endCursor ?? null;
     // Running out of pages with more pending is the same incompleteness as a
     // failed page, and callers cannot see the difference either.
     if (page === RASTER_GRAPHQL_MAX_PAGES - 1) {

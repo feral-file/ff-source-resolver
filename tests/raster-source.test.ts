@@ -377,6 +377,64 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     assert.ok(maxInFlight <= 50, `max in-flight was ${maxInFlight}`);
   });
 
+  test('rejects a page that is not provably whole', async () => {
+    // Each shape is a 200 response whose second page cannot be trusted. All of
+    // them must fail the enumeration rather than return page one as complete.
+    const firstPage = {
+      id: '1',
+      title: 'Split Logic',
+      description: '',
+      artists: [],
+      platform: null,
+      tokens: {
+        totalCount: 4,
+        pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
+        nodes: [
+          {
+            chainId: 'eip155:1',
+            contractAddress: CONTRACT,
+            tokenId: '95',
+            tokenStandard: 'ERC721',
+            name: '',
+            media: { contentUrl: 'https://example.com/a', previewHash: null, previewType: null },
+          },
+        ],
+      },
+    };
+    const damagedSecondPages: Array<[string, object]> = [
+      ['field-level errors beside data', { errors: [{ message: 'boom' }], data: { artworkBySlug: firstPage } }],
+      ['null token connection', { data: { artworkBySlug: { ...firstPage, tokens: null } } }],
+      ['missing pageInfo', { data: { artworkBySlug: { ...firstPage, tokens: { totalCount: 4, nodes: [] } } } }],
+      [
+        'hasNextPage with no cursor',
+        {
+          data: {
+            artworkBySlug: {
+              ...firstPage,
+              tokens: { totalCount: 4, pageInfo: { hasNextPage: true, endCursor: null }, nodes: [] },
+            },
+          },
+        },
+      ],
+    ];
+
+    for (const [label, secondPage] of damagedSecondPages) {
+      let call = 0;
+      const fetchImpl = (async (): Promise<Response> => {
+        call += 1;
+        return Response.json(call === 1 ? { data: { artworkBySlug: firstPage } } : secondPage);
+      }) as typeof fetch;
+
+      const findings = await resolveRasterArtworkSources(
+        new URL(ARTWORK_URL),
+        [ethereumCoords('95')],
+        fetchImpl
+      );
+
+      assert.deepEqual(findings, [], `expected no findings for: ${label}`);
+    }
+  });
+
   test('returns nothing when GraphQL is unavailable', async () => {
     // Raster's REST and GraphQL APIs are one backend, so a GraphQL outage is a
     // Raster outage: there is no second source to fall back to.
