@@ -150,6 +150,14 @@ export interface ResolveTokenInfoOptions {
   fetch?: typeof fetch;
   renderer?: HeadlessPageRenderer;
   /**
+   * html is page markup the caller already holds for this URL -- a cache, or
+   * output from a browser it drives itself. It is used in place of the
+   * resolver's own page request, and is the way to reach the DOM extractors
+   * for a site whose adapter sets skipStaticFetch because its pages refuse
+   * ordinary fetchers.
+   */
+  html?: string;
+  /**
    * Resolves browser-loadable artwork URLs in addition to token coordinates.
    * This may inspect page content or call a keyless marketplace API.
    */

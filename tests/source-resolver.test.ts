@@ -1366,6 +1366,80 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
+  test('pages past unsupported chains until the limit is met in usable tokens', async () => {
+    // A limit counts tokens the caller can use. Sizing the page request by it
+    // let two Base rows -- a chain this package does not resolve -- end
+    // pagination before the supported tokens on the next page were seen.
+    const nodes = (chainId: string, contract: string, ids: readonly string[]): object[] =>
+      ids.map((tokenId) => ({
+        chainId,
+        contractAddress: contract,
+        tokenId,
+        tokenStandard: 'ERC721',
+        name: '',
+        media: { contentUrl: '', previewHash: null, previewType: null },
+      }));
+    const page = (rows: object[], hasNextPage: boolean, endCursor: string | null): object => ({
+      data: {
+        artworkBySlug: {
+          id: '1',
+          title: 'Mixed Chains',
+          description: '',
+          artists: [],
+          platform: null,
+          tokens: { totalCount: 4, pageInfo: { hasNextPage, endCursor }, nodes: rows },
+        },
+      },
+    });
+    let call = 0;
+    const fetchImpl = (async (): Promise<Response> => {
+      call += 1;
+      return Response.json(
+        call === 1
+          ? page(nodes('eip155:8453', '0xbase', ['1', '2']), true, 'CURSOR')
+          : page(nodes('eip155:1', ETH_CONTRACT, ['7', '8']), false, null)
+      );
+    }) as typeof fetch;
+
+    const result = await resolveTokenInfos('https://raster.art/artwork/mixed-chains', {
+      fetch: fetchImpl,
+      limit: 1,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '7' }]);
+    assert.equal(result.hasMore, true);
+    assert.equal(call, 2);
+  });
+
+  test('uses caller-supplied HTML for the DOM extractors when the page fetch is skipped', async () => {
+    // Raster sets skipStaticFetch, but a caller that already holds the markup
+    // should still reach the DOM path rather than being forced to GraphQL.
+    const html = rasterArtworkCard(ETH_CONTRACT, '95');
+    const requests: string[] = [];
+    const fetchImpl = (async (input: string | URL | Request): Promise<Response> => {
+      requests.push(input.toString());
+      return new Response(null, { status: 503 });
+    }) as typeof fetch;
+
+    const result = await resolveTokenInfo(
+      'https://raster.art/artwork/split-logic-by-ricky-retouch',
+      { fetch: fetchImpl, html }
+    );
+
+    assert.equal(result.kind, 'token');
+    if (result.kind !== 'token') {
+      throw new Error('narrowing');
+    }
+    assert.equal(result.method, 'dom');
+    assert.deepEqual(result.coords, { chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '95' });
+    // The supplied markup replaces the page request rather than adding to it.
+    assert.deepEqual(requests, []);
+  });
+
   test('Raster artwork reports not-found when GraphQL is unavailable', async () => {
     // REST and GraphQL are the same Raster backend, so there is no fallback to
     // reach for: a GraphQL outage is a Raster outage.

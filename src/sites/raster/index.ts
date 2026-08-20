@@ -12,7 +12,7 @@ import {
   extractRasterArtworkTokensFromHtml,
   parseRasterArtwork,
 } from './pages/artwork';
-import type { RasterEnrichmentContext } from './graphql';
+import type { RasterEnrichmentContext, RasterGraphqlToken } from './graphql';
 import { resolveRasterArtworkWithTokens } from './graphql';
 import { resolveRasterArtworkSources } from './pages/source';
 import { parseRasterToken } from './pages/token';
@@ -66,15 +66,16 @@ async function resolveRasterArtworkTokensFromApi(
   // GraphQL first: one paginated query yields coordinates plus the artwork
   // metadata and media fields the enrichment pass needs, so its result is
   // replayed through enrichmentContext instead of being fetched twice.
-  const artwork = await resolveRasterArtworkWithTokens(parsed.slug, fetchImpl, targetCount);
+  const artwork = await resolveRasterArtworkWithTokens(
+    parsed.slug,
+    fetchImpl,
+    targetCount,
+    (token) => rasterCoordinates(token) !== null
+  );
   if (artwork) {
     const results: ParsedFindInput[] = [];
     for (const token of artwork.tokens) {
-      const chain = rasterSupportedChain(token.chainId);
-      const result =
-        chain && token.contractAddress && token.tokenId
-          ? sourceTokenResult('raster', chain, token.contractAddress, token.tokenId)
-          : null;
+      const result = rasterCoordinates(token);
       if (result) {
         results.push(result);
       }
@@ -95,3 +96,16 @@ async function resolveRasterArtworkTokensFromApi(
   return { findings: [] };
 }
 
+/**
+ * rasterCoordinates maps one GraphQL token row to source coordinates, or null
+ * when this package does not resolve its chain. Pagination and enumeration
+ * share it so a row that stops the page loop is exactly a row that produces a
+ * finding.
+ */
+function rasterCoordinates(token: RasterGraphqlToken): ParsedFindInput | null {
+  const chain = rasterSupportedChain(token.chainId);
+  if (!chain || !token.contractAddress || !token.tokenId) {
+    return null;
+  }
+  return sourceTokenResult('raster', chain, token.contractAddress, token.tokenId);
+}

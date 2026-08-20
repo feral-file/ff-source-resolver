@@ -88,18 +88,21 @@ const RASTER_ARTWORK_WITH_TOKENS_QUERY =
 export async function resolveRasterArtworkWithTokens(
   slug: string,
   fetchImpl: typeof fetch,
-  limit?: number
+  limit?: number,
+  countsTowardLimit: (token: RasterGraphqlToken) => boolean = () => true
 ): Promise<RasterArtworkWithTokens | null> {
   let after: string | null = null;
   let artwork: RasterArtworkWithTokens | null = null;
   const tokens: RasterGraphqlToken[] = [];
+  let usable = 0;
   let hasMore = false;
 
   for (let page = 0; page < RASTER_GRAPHQL_MAX_PAGES; page += 1) {
-    const first =
-      limit == null
-        ? RASTER_GRAPHQL_PAGE_SIZE
-        : Math.min(RASTER_GRAPHQL_PAGE_SIZE, Math.max(1, limit - tokens.length));
+    // Always ask for a full page. A limit counts tokens the caller can use,
+    // and rows this package drops -- an artwork also minted on a chain it does
+    // not resolve -- are not knowable before they arrive, so sizing the
+    // request by the limit would stop paging on rows that count for nothing.
+    const first = RASTER_GRAPHQL_PAGE_SIZE;
     const body: RasterArtworkWithTokensResponse | null =
       await postRasterGraphql<RasterArtworkWithTokensResponse>(
         fetchImpl,
@@ -130,7 +133,7 @@ export async function resolveRasterArtworkWithTokens(
     }
     for (const row of node.tokens?.nodes ?? []) {
       if (!row || row.tokenId == null) continue;
-      tokens.push({
+      const token: RasterGraphqlToken = {
         chainId: row.chainId ?? null,
         contractAddress: row.contractAddress ?? null,
         tokenId: String(row.tokenId),
@@ -139,13 +142,17 @@ export async function resolveRasterArtworkWithTokens(
         contentUrl: row.media?.contentUrl ?? null,
         previewHash: row.media?.previewHash ?? null,
         previewType: row.media?.previewType ?? null,
-      });
+      };
+      tokens.push(token);
+      if (countsTowardLimit(token)) {
+        usable += 1;
+      }
     }
     const pageInfo: NonNullable<RasterArtworkWithTokensNode['tokens']>['pageInfo'] | undefined =
       node.tokens?.pageInfo;
     const nextPage = pageInfo?.hasNextPage === true && Boolean(pageInfo.endCursor);
-    if (limit != null && tokens.length >= limit) {
-      hasMore = nextPage || tokens.length > limit;
+    if (limit != null && usable >= limit) {
+      hasMore = nextPage || usable > limit;
       break;
     }
     if (!nextPage) {
