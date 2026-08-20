@@ -421,33 +421,8 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         withTokens({ totalCount: 4, pageInfo: { hasNextPage: true, endCursor: null }, nodes: [] }),
       ],
       [
-        'missing totalCount',
-        withTokens({ pageInfo: { hasNextPage: false, endCursor: null }, nodes: [row('96')] }),
-      ],
-      [
-        'non-numeric totalCount',
-        withTokens({ totalCount: '4', pageInfo: { hasNextPage: false, endCursor: null }, nodes: [row('96')] }),
-      ],
-      [
         'missing hasNextPage',
         withTokens({ totalCount: 2, pageInfo: { endCursor: null }, nodes: [row('96')] }),
-      ],
-      [
-        // The connection says four tokens exist and hands back two.
-        'terminal page short of totalCount',
-        withTokens({ totalCount: 4, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [row('96')] }),
-      ],
-      [
-        'row without a token id',
-        withTokens({
-          totalCount: 2,
-          pageInfo: { hasNextPage: false, endCursor: null },
-          nodes: [{ ...row('96'), tokenId: null }],
-        }),
-      ],
-      [
-        'null row',
-        withTokens({ totalCount: 2, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [null] }),
       ],
     ];
 
@@ -466,6 +441,55 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
 
       assert.deepEqual(findings, [], `expected no findings for: ${label}`);
     }
+  });
+
+  test('takes Raster at its word on hasNextPage rather than auditing its counts', async () => {
+    // totalCount disagreeing with the rows, or a row Raster describes without
+    // a token id, is Raster's data to get right. The walk reads what it can
+    // and stops where the connection says it ends -- reconciling counts across
+    // a multi-page walk would turn an ordinary mint or burn mid-pagination
+    // into a failed resolve.
+    const fetchImpl = graphqlAwareFetch([], {
+      graphql: {
+        data: {
+          artworkBySlug: {
+            id: '2886465',
+            title: 'Split Logic',
+            description: '',
+            artists: [],
+            platform: null,
+            tokens: {
+              totalCount: 99,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                {
+                  chainId: 'eip155:1',
+                  contractAddress: CONTRACT,
+                  tokenId: '95',
+                  tokenStandard: 'ERC721',
+                  name: '',
+                  media: {
+                    contentUrl: 'https://example.com/original-95',
+                    previewHash: null,
+                    previewType: null,
+                  },
+                },
+                { chainId: 'eip155:1', contractAddress: CONTRACT, tokenId: null, media: null },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(ARTWORK_URL),
+      [ethereumCoords('95')],
+      fetchImpl
+    );
+
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0]?.artworkSource, 'https://example.com/original-95');
   });
 
   test('returns nothing when GraphQL is unavailable', async () => {

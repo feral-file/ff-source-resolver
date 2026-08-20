@@ -105,7 +105,6 @@ export async function resolveRasterArtworkWithTokens(
   const tokens: RasterGraphqlToken[] = [];
   let usable = 0;
   let hasMore = false;
-  let totalCount = 0;
 
   for (let page = 0; page < RASTER_GRAPHQL_MAX_PAGES; page += 1) {
     // Always ask for a full page. A limit counts tokens the caller can use,
@@ -137,13 +136,10 @@ export async function resolveRasterArtworkWithTokens(
       return null;
     }
     const pageInfo: RasterPageInfo = connection.pageInfo;
-    // `totalCount` and `hasNextPage` are non-null in the schema, so a missing
-    // or mistyped one is a damaged page rather than a shorter series. Reading
-    // an absent hasNextPage as "no more pages" would end the walk early and
-    // call the result complete.
-    if (!Number.isInteger(connection.totalCount) || (connection.totalCount ?? -1) < 0) {
-      return null;
-    }
+    // `hasNextPage` is the connection's own answer to "am I done", and the
+    // schema declares it non-null. Reading an absent one as "no more pages"
+    // would end the walk early and call the result complete, so a missing or
+    // mistyped one is a damaged page.
     if (typeof pageInfo.hasNextPage !== 'boolean') {
       return null;
     }
@@ -151,7 +147,6 @@ export async function resolveRasterArtworkWithTokens(
       // More pages exist and there is no way to ask for them.
       return null;
     }
-    totalCount = connection.totalCount ?? 0;
     if (!artwork) {
       artwork = {
         id: String(node.id),
@@ -166,12 +161,10 @@ export async function resolveRasterArtworkWithTokens(
       };
     }
     for (const row of connection.nodes) {
-      // A row the connection counted but this package cannot read is a token
-      // silently missing from the inventory, which is the shape of failure
-      // this walk exists to refuse.
-      if (!row || row.tokenId == null) {
-        return null;
-      }
+      // A row without a token id is Raster describing a token in a way this
+      // package cannot use. That is their data to get right; taking the rows
+      // that do work beats refusing the whole series over one of them.
+      if (!row || row.tokenId == null) continue;
       const token: RasterGraphqlToken = {
         chainId: row.chainId ?? null,
         contractAddress: row.contractAddress ?? null,
@@ -193,12 +186,6 @@ export async function resolveRasterArtworkWithTokens(
       break;
     }
     if (!nextPage) {
-      // The connection is exhausted, so every token it counted should be in
-      // hand. Anything less means rows went missing between pages, and the
-      // caller has no way to see the gap.
-      if (tokens.length !== totalCount) {
-        return null;
-      }
       break;
     }
     after = pageInfo.endCursor ?? null;
