@@ -50,7 +50,9 @@ export async function resolveTokenInfo(
     return { kind: 'not-found', reason: 'No static page extractor is registered for this site.' };
   }
 
-  const fetched = await fetchStaticHtml(url, options.fetch);
+  const fetched =
+    options.html ??
+    (site.skipStaticFetch === true ? null : await fetchStaticHtml(url, options.fetch));
   if (fetched) {
     const domParsed = normalizeParsedFindInput(site.extractFromHtml(url, fetched));
     if (domParsed?.kind === 'token') {
@@ -116,7 +118,9 @@ export async function resolveTokenInfos(
     return { kind: 'not-found', reason: 'No source adapter is registered for this site.' };
   }
 
-  const fetched = await fetchStaticHtml(url, options.fetch);
+  const fetched =
+    options.html ??
+    (site.skipStaticFetch === true ? null : await fetchStaticHtml(url, options.fetch));
   const domTokens = fetched ? normalizeTokenFindings(extractTokenFindings(site, url, fetched)) : [];
   if (domTokens.length > 0) {
     const apiFindings = await resolveApiParsedMany(site, url, parsed, options.fetch, fetched, limit);
@@ -131,7 +135,8 @@ export async function resolveTokenInfos(
         site,
         fetched,
         limit,
-        apiFindings.hasMore
+        apiFindings.hasMore,
+        apiFindings.enrichmentContext
       );
     }
     return tokensResolution(
@@ -171,7 +176,8 @@ export async function resolveTokenInfos(
           site,
           rendered ?? fetched,
           limit,
-          apiFindings.hasMore
+          apiFindings.hasMore,
+          apiFindings.enrichmentContext
         );
       }
       return tokensResolution(
@@ -199,7 +205,8 @@ export async function resolveTokenInfos(
       site,
       fetched,
       limit,
-      apiFindings.hasMore
+      apiFindings.hasMore,
+      apiFindings.enrichmentContext
     );
   }
 
@@ -218,7 +225,8 @@ async function tokensResolution(
   site: NonNullable<ReturnType<typeof matchSite>> | null,
   html?: string | null,
   limit?: number,
-  sourceHasMore = false
+  sourceHasMore = false,
+  enrichmentContext?: unknown
 ): Promise<TokenInfosResolution> {
   const limited = limit == null ? tokens : tokens.slice(0, limit);
   const hasMore = sourceHasMore || (limit != null && tokens.length > limit);
@@ -230,7 +238,14 @@ async function tokensResolution(
     ...(title ? { title } : {}),
     ...(hasMore ? { hasMore } : {}),
   };
-  const artworkSources = await resolveArtworkSources(site, url, result.coords, options, html);
+  const artworkSources = await resolveArtworkSources(
+    site,
+    url,
+    result.coords,
+    options,
+    html,
+    enrichmentContext
+  );
   return artworkSources.length > 0 ? { ...result, artworkSources } : result;
 }
 
@@ -262,7 +277,8 @@ async function resolveArtworkSources(
   url: URL | null,
   coords: readonly TokenCoords[],
   options: ResolveTokenInfoOptions,
-  html?: string | null
+  html?: string | null,
+  enrichmentContext?: unknown
 ): Promise<ArtworkSourceFinding[]> {
   if (!options.includeArtworkSource || !site?.resolveArtworkSources || !url) {
     return [];
@@ -272,7 +288,10 @@ async function resolveArtworkSources(
     return [];
   }
   try {
-    const findings = await site.resolveArtworkSources(url, coords, doFetch, { html });
+    const findings = await site.resolveArtworkSources(url, coords, doFetch, {
+      html,
+      enrichmentContext,
+    });
     return normalizeArtworkSourceFindings(findings, coords);
   } catch {
     return [];
@@ -296,7 +315,17 @@ function normalizeArtworkSourceFindings(
     const key = tokenCoordsKey(normalized);
     const coords = requested.get(key);
     if (coords && !results.has(key)) {
-      results.set(key, { coords, artworkSource });
+      results.set(key, {
+        coords,
+        artworkSource,
+        ...optionalFindingText('title', finding.title),
+        ...optionalFindingText('description', finding.description),
+        ...optionalFindingArtists(finding.artists),
+        ...optionalFindingText('creditLine', finding.creditLine),
+        ...optionalFindingUrl('thumbnail', finding.thumbnail),
+        ...optionalFindingUrl('metadataUri', finding.metadataUri),
+        ...optionalFindingStandard(finding.standard),
+      });
     }
   }
   return requestedCoords.flatMap((coords) => {
@@ -312,6 +341,40 @@ function browserArtworkSource(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+function optionalFindingText(
+  key: 'title' | 'description' | 'creditLine',
+  value: string | undefined
+): Partial<ArtworkSourceFinding> {
+  const text = value?.replace(/\s+/g, ' ').trim();
+  return text ? { [key]: text } : {};
+}
+
+function optionalFindingUrl(
+  key: 'thumbnail' | 'metadataUri',
+  value: string | undefined
+): Partial<ArtworkSourceFinding> {
+  const url = value ? browserArtworkSource(value) : null;
+  return url ? { [key]: url } : {};
+}
+
+function optionalFindingArtists(
+  artists: ArtworkSourceFinding['artists']
+): Partial<ArtworkSourceFinding> {
+  const named = (artists ?? []).flatMap((artist) => {
+    const name = artist.name.replace(/\s+/g, ' ').trim();
+    return name ? [{ name }] : [];
+  });
+  return named.length > 0 ? { artists: named } : {};
+}
+
+function optionalFindingStandard(
+  standard: ArtworkSourceFinding['standard']
+): Partial<ArtworkSourceFinding> {
+  return standard === 'erc721' || standard === 'erc1155' || standard === 'fa2'
+    ? { standard }
+    : {};
 }
 
 function tokenCoordsKey(coords: TokenCoords): string {
@@ -445,7 +508,12 @@ async function resolveApiParsedMany(
   fetchImpl: typeof fetch | undefined,
   html?: string | null,
   limit?: number
-): Promise<{ findings: readonly ParsedFindInput[]; title?: string; hasMore?: boolean }> {
+): Promise<{
+  findings: readonly ParsedFindInput[];
+  title?: string;
+  hasMore?: boolean;
+  enrichmentContext?: unknown;
+}> {
   const doFetch = fetchImpl ?? globalThis.fetch;
   if (!doFetch) {
     return { findings: [] };
@@ -476,12 +544,16 @@ function normalizeTokenFindingsResult(result: TokenFindingsResult): {
   findings: readonly ParsedFindInput[];
   title?: string;
   hasMore?: boolean;
+  enrichmentContext?: unknown;
 } {
   return 'findings' in result
     ? {
         findings: result.findings,
         ...(result.title ? { title: result.title } : {}),
         ...(result.hasMore ? { hasMore: result.hasMore } : {}),
+        ...(result.enrichmentContext !== undefined
+          ? { enrichmentContext: result.enrichmentContext }
+          : {}),
       }
     : { findings: result };
 }

@@ -8,25 +8,29 @@ import { sourceTokenResult } from '../../helpers';
 import { limitTokenFindings, tokenLimitTarget } from '../../limits';
 import { rasterSupportedChain } from './chain';
 import {
-  extractRasterArtworkId,
   extractRasterArtworkTokenFromHtml,
   extractRasterArtworkTokensFromHtml,
   parseRasterArtwork,
 } from './pages/artwork';
-import { resolveRasterArtworkBySlug } from './graphql';
+import type { RasterEnrichmentContext, RasterGraphqlToken } from './graphql';
+import { resolveRasterArtworkWithTokens } from './graphql';
 import { resolveRasterArtworkSources } from './pages/source';
 import { parseRasterToken } from './pages/token';
 
-const RASTER_PAGE_HEADERS = {
-  Accept: 'text/html,application/xhtml+xml',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-} as const;
-
 /**
  * rasterAdapter owns Raster URL and page extraction rules.
+ *
+ * raster.art itself sits behind a Vercel bot-protection checkpoint that 429s
+ * non-browser fetchers, so this adapter never fetches the page on its own and
+ * declares skipStaticFetch: page markup is consumed only when a caller
+ * supplies it or a renderer produces it.
+ *
+ * Collections are enumerated through the keyless GraphQL API alone. Raster's
+ * REST API is the same backend rather than an independent source -- it reports
+ * the same internal id, content size and media hash for a token -- so there is
+ * no fallback to reach for, and a GraphQL outage resolves as not-found. The
+ * kit REST API is still used for per-token media, but only for tokens GraphQL
+ * describes with neither a content URL nor a usable preview.
  */
 export const rasterAdapter: SourceSiteAdapter = {
   source: 'raster',
@@ -40,6 +44,9 @@ export const rasterAdapter: SourceSiteAdapter = {
       }
     );
   },
+  // raster.art answers non-browser fetchers with a 429 challenge, so the page
+  // request is a guaranteed miss; everything comes from the keyless API.
+  skipStaticFetch: true,
   extractFromHtml(url: URL, html: string): ParsedFindInput | null {
     return extractRasterArtworkTokenFromHtml(url, html);
   },
@@ -52,15 +59,6 @@ export const rasterAdapter: SourceSiteAdapter = {
   resolveArtworkSources: resolveRasterArtworkSources,
 };
 
-interface RasterTokenPage {
-  tokens?: Array<{
-    chain_id?: string;
-    contract_address?: string;
-    token_id?: string | number;
-  }>;
-  cursor?: number | string | null;
-}
-
 async function resolveRasterArtworkTokensFromApi(
   url: URL,
   parsed: ParsedFindInput | null,
@@ -70,79 +68,51 @@ async function resolveRasterArtworkTokensFromApi(
   if (parsed?.kind !== 'raster-artwork') {
     return { findings: [] };
   }
-  let html = context?.html ?? null;
-  if (!html) {
-    // Non-fatal: raster.art serves a Vercel bot-protection challenge (429) to
-    // non-browser fetchers, so the page payload is a best-effort id source.
-    const page = await fetchImpl(url.toString(), {
-      headers: RASTER_PAGE_HEADERS,
-    }).catch(() => null);
-    if (page?.ok) {
-      html = await page.text();
-    }
-  }
-  let artworkId = html ? extractRasterArtworkId(html) : null;
-  let apiTitle: string | undefined;
-  if (!artworkId) {
-    const artwork = await resolveRasterArtworkBySlug(parsed.slug, fetchImpl);
-    if (!artwork) {
-      return { findings: [] };
-    }
-    artworkId = artwork.id;
-    apiTitle = artwork.title;
-  }
-
-  const results: ParsedFindInput[] = [];
-  let cursor = '0';
-  let hasMore = false;
   const targetCount = tokenLimitTarget(context?.limit);
-  for (let pageCount = 0; pageCount < 20; pageCount += 1) {
-    const pageLimit =
-      targetCount == null ? 100 : Math.min(100, Math.max(1, targetCount - results.length));
-    const apiUrl = new URL(`/artwork/${artworkId}/tokens`, 'https://kit.raster.art');
-    apiUrl.searchParams.set('cursor', cursor);
-    apiUrl.searchParams.set('page_size', String(pageLimit));
-    apiUrl.searchParams.set('sort', 'listing');
-    apiUrl.searchParams.set('sort_direction', 'asc');
 
-    const response = await fetchImpl(apiUrl.toString(), { headers: { Accept: 'application/json' } });
-    if (!response.ok) {
-      break;
-    }
-    const body = (await response.json().catch(() => null)) as RasterTokenPage | null;
-    const tokens = body?.tokens ?? [];
-    if (tokens.length === 0) {
-      break;
-    }
-    for (const token of tokens) {
-      const result = rasterApiToken(token);
+  // GraphQL first: one paginated query yields coordinates plus the artwork
+  // metadata and media fields the enrichment pass needs, so its result is
+  // replayed through enrichmentContext instead of being fetched twice.
+  const artwork = await resolveRasterArtworkWithTokens(
+    parsed.slug,
+    fetchImpl,
+    targetCount,
+    (token) => rasterCoordinates(token) !== null
+  );
+  if (artwork) {
+    const results: ParsedFindInput[] = [];
+    for (const token of artwork.tokens) {
+      const result = rasterCoordinates(token);
       if (result) {
         results.push(result);
-        if (targetCount != null && results.length >= targetCount) {
-          hasMore = true;
-          break;
-        }
       }
     }
-    if (hasMore) {
-      break;
+    if (results.length > 0) {
+      const hasMore =
+        artwork.hasMore || (context?.limit != null && results.length > context.limit);
+      const enrichmentContext: RasterEnrichmentContext = { artwork };
+      return {
+        findings: limitTokenFindings(results, context?.limit),
+        ...(artwork.title ? { title: artwork.title } : {}),
+        ...(hasMore ? { hasMore } : {}),
+        enrichmentContext,
+      };
     }
-    const nextCursor = body?.cursor == null ? '' : String(body.cursor);
-    if (!nextCursor || nextCursor === cursor) {
-      break;
-    }
-    cursor = nextCursor;
   }
-  return {
-    findings: limitTokenFindings(results, context?.limit),
-    ...(apiTitle ? { title: apiTitle } : {}),
-    ...(hasMore ? { hasMore } : {}),
-  };
+
+  return { findings: [] };
 }
 
-function rasterApiToken(token: NonNullable<RasterTokenPage['tokens']>[number]): ParsedFindInput | null {
-  const chain = rasterSupportedChain(token.chain_id);
-  const contract = token.contract_address ?? '';
-  const tokenId = token.token_id == null ? '' : String(token.token_id);
-  return chain && contract && tokenId ? sourceTokenResult('raster', chain, contract, tokenId) : null;
+/**
+ * rasterCoordinates maps one GraphQL token row to source coordinates, or null
+ * when this package does not resolve its chain. Pagination and enumeration
+ * share it so a row that stops the page loop is exactly a row that produces a
+ * finding.
+ */
+function rasterCoordinates(token: RasterGraphqlToken): ParsedFindInput | null {
+  const chain = rasterSupportedChain(token.chainId);
+  if (!chain || !token.contractAddress || !token.tokenId) {
+    return null;
+  }
+  return sourceTokenResult('raster', chain, token.contractAddress, token.tokenId);
 }
