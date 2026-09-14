@@ -1,4 +1,5 @@
-import type { ArtworkSourceFinding, TokenCoords } from '../../../types';
+import { cleanFindingArtist } from '../../../helpers';
+import type { ArtworkSourceFinding, FindingArtist, TokenCoords } from '../../../types';
 import { parseFeralFileArtwork } from './artwork';
 import { parseFeralFileSeries } from './series';
 import { parseFeralFileShow } from './show';
@@ -25,11 +26,22 @@ interface FeralFileArtworkSourceRecord {
   } | null;
 }
 
+interface FeralFileAlumniAccount {
+  alias?: string | null;
+  fullName?: string | null;
+  slug?: string | null;
+  addresses?: Record<string, string | null | undefined> | null;
+  associatedAddresses?: Array<string | null> | null;
+  avatarDisplay?: string | null;
+  collaborationAlumniAccounts?: Array<FeralFileAlumniAccount | null> | null;
+}
+
 interface FeralFileSeriesSourceRecord {
   id?: string;
   medium?: string;
   uniquePreviewPath?: string | null;
   previewFile?: { uri?: string | null } | null;
+  artist?: { alumniAccount?: FeralFileAlumniAccount | null } | null;
 }
 
 interface FeralFileShowSourceRecord {
@@ -147,12 +159,47 @@ function sourceFindings(
   for (const artwork of artworks) {
     const key = artworkCoordsKey(artwork);
     const coords = key ? requested.get(key) : undefined;
-    const artworkSource = artworkSourceUrl(artwork, seriesById?.get(artwork.seriesID ?? ''));
+    const series = seriesById?.get(artwork.seriesID ?? '');
+    const artworkSource = artworkSourceUrl(artwork, series);
     if (coords && artworkSource) {
-      findings.push({ coords, artworkSource });
+      const artists = feralFileArtists(series);
+      findings.push({ coords, artworkSource, ...(artists.length > 0 ? { artists } : {}) });
     }
   }
   return findings;
+}
+
+/**
+ * feralFileArtists credits the series artist and any collaborators from the
+ * alumni account the series record already embeds, so the profile costs no
+ * request beyond the series fetch the adapter makes anyway. That is also why
+ * a single artwork URL is credited only when its series was fetched for the
+ * preview fallback: the artwork record carries no artist, and this package
+ * does not add a request just to name one.
+ *
+ * Wallets are the per-chain `addresses` map plus `associatedAddresses`;
+ * `avatarDisplay` is a Cloudflare Images URL. The alumni record on a series
+ * carries no bio or website — those live on a separate alumni endpoint this
+ * adapter does not call.
+ */
+function feralFileArtists(series: FeralFileSeriesSourceRecord | undefined): FindingArtist[] {
+  const account = series?.artist?.alumniAccount;
+  if (!account) return [];
+  const accounts = [account, ...(account.collaborationAlumniAccounts ?? [])];
+  return accounts.flatMap((alumni) => {
+    const cleaned = alumni
+      ? cleanFindingArtist({
+          name: alumni.alias?.trim() || alumni.fullName,
+          addresses: [
+            ...Object.values(alumni.addresses ?? {}),
+            ...(alumni.associatedAddresses ?? []),
+          ],
+          slug: alumni.slug,
+          avatar: alumni.avatarDisplay,
+        })
+      : null;
+    return cleaned ? [cleaned] : [];
+  });
 }
 
 /**
