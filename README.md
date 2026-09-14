@@ -49,7 +49,7 @@ fetched just to fill it: every profile rides on a request the adapter already
 makes. Today that is Raster (wallets, slug, bio), fxhash (wallet, bio, avatar;
 collaborators for a collab contract), Objkt (wallets, bio, avatar, links),
 SuperRare (wallets, bio, avatar; API-resolved tokens only), Verse (slug, bio,
-links) and Feral File (wallets, slug, avatar — a single artwork asks its own
+links; series-query path only) and Feral File (wallets, slug, avatar — a single artwork asks its own
 request for the artist with `?includeArtist=true`). Art Blocks, OpenSea and
 NEORT publish no artist on the requests this package makes, so their findings
 carry none.

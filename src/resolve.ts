@@ -1,4 +1,9 @@
-import { cleanFindingArtist, normalizeParsedFindInput, normalizeParsedFindInputs } from './helpers';
+import {
+  cleanFindingArtist,
+  httpUrl,
+  normalizeParsedFindInput,
+  normalizeParsedFindInputs,
+} from './helpers';
 import { parseFindInput } from './parse';
 import { matchSite } from './site-utils';
 import { siteAdapters } from './sites';
@@ -335,12 +340,7 @@ function normalizeArtworkSourceFindings(
 }
 
 function browserArtworkSource(value: string): string | null {
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
-  } catch {
-    return null;
-  }
+  return httpUrl(value);
 }
 
 function optionalFindingText(

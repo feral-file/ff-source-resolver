@@ -26,9 +26,9 @@ interface FeralFileArtworkSourceRecord {
   } | null;
   /**
    * Embedded by `?includeArtist=true` on the single-artwork endpoint. It is a
-   * partial series record -- id, medium and the artist, no preview fields --
-   * so it credits the artwork but cannot stand in for the series fetched as
-   * a preview fallback.
+   * partial series record -- id and the artist, no preview fields -- so it
+   * credits the artwork but cannot stand in for the series fetched as a
+   * preview fallback.
    */
   series?: Pick<FeralFileSeriesSourceRecord, 'id' | 'artist'> | null;
 }

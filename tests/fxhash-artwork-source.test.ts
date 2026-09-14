@@ -123,6 +123,33 @@ describe('fxhash artwork source enrichment', () => {
     );
   });
 
+  test('credits the collab contract itself when it lists no collaborators', async () => {
+    // Nothing better is on record: the label is the only name fxhash gives
+    // and the KT1 the only address. The library passes both through; whether
+    // a contract counts as a person is the caller's rule.
+    const fetchImpl = graphqlFetch(() => ({
+      data: {
+        generativeToken: {
+          author: {
+            id: 'KT1CollabContract',
+            name: 'A & B',
+            type: 'COLLAB_CONTRACT_V1',
+            description: null,
+            avatarUri: null,
+            collaborators: [],
+          },
+          entireCollection: [objkt(LEGACY_COORDS, 'ipfs://QmA')],
+        },
+      },
+    }));
+    const findings = await resolveFxhashArtworkSources(
+      new URL('https://www.fxhash.xyz/project/garden-monoliths'),
+      [LEGACY_COORDS],
+      fetchImpl as typeof fetch
+    );
+    assert.deepEqual(findings[0]?.artists, [{ name: 'A & B', addresses: ['KT1CollabContract'] }]);
+  });
+
   test('leaves artists absent when the response names no author', async () => {
     const fetchImpl = graphqlFetch(() => ({
       data: {

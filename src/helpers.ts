@@ -113,7 +113,10 @@ export function cleanArtistAddresses(
   return Array.from(
     new Set(
       (addresses ?? []).flatMap((address) => {
-        const trimmed = address?.trim() ?? '';
+        // A source map value that is not a string (Feral File's per-chain
+        // map is typed as strings but arrives from JSON) must not throw here:
+        // an adapter error costs every finding in the batch, not one wallet.
+        const trimmed = typeof address === 'string' ? address.trim() : '';
         return trimmed ? [trimmed] : [];
       })
     )
