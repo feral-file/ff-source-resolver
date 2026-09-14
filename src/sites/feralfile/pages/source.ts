@@ -1,4 +1,5 @@
-import type { ArtworkSourceFinding, TokenCoords } from '../../../types';
+import { cleanFindingArtist } from '../../../helpers';
+import type { ArtworkSourceFinding, FindingArtist, TokenCoords } from '../../../types';
 import { parseFeralFileArtwork } from './artwork';
 import { parseFeralFileSeries } from './series';
 import { parseFeralFileShow } from './show';
@@ -23,6 +24,23 @@ interface FeralFileArtworkSourceRecord {
     alternativePreviewURI?: string | null;
     previewCloudFlareURL?: string | null;
   } | null;
+  /**
+   * Embedded by `?includeArtist=true` on the single-artwork endpoint. It is a
+   * partial series record -- id and the artist, no preview fields -- so it
+   * credits the artwork but cannot stand in for the series fetched as a
+   * preview fallback.
+   */
+  series?: Pick<FeralFileSeriesSourceRecord, 'id' | 'artist'> | null;
+}
+
+interface FeralFileAlumniAccount {
+  alias?: string | null;
+  fullName?: string | null;
+  slug?: string | null;
+  addresses?: Record<string, string | null | undefined> | null;
+  associatedAddresses?: Array<string | null> | null;
+  avatarDisplay?: string | null;
+  collaborationAlumniAccounts?: Array<FeralFileAlumniAccount | null> | null;
 }
 
 interface FeralFileSeriesSourceRecord {
@@ -30,6 +48,7 @@ interface FeralFileSeriesSourceRecord {
   medium?: string;
   uniquePreviewPath?: string | null;
   previewFile?: { uri?: string | null } | null;
+  artist?: { alumniAccount?: FeralFileAlumniAccount | null } | null;
 }
 
 interface FeralFileShowSourceRecord {
@@ -48,8 +67,12 @@ export async function resolveFeralFileArtworkSources(
 ): Promise<readonly ArtworkSourceFinding[]> {
   const artworkPage = parseFeralFileArtwork(url);
   if (artworkPage?.kind === 'ff-url') {
+    // `includeArtist` makes the same request also carry the series artist,
+    // which the artwork record does not hold on its own; the preview
+    // fallback below still needs the full series when there is no direct
+    // preview, since the embedded series has no preview fields.
     const artwork = await fetchFeralFileApi<FeralFileArtworkSourceRecord>(
-      `/api/artworks/${encodeURIComponent(artworkPage.identifier)}`,
+      `/api/artworks/${encodeURIComponent(artworkPage.identifier)}?includeArtist=true`,
       fetchImpl
     );
     if (!artwork) {
@@ -147,12 +170,48 @@ function sourceFindings(
   for (const artwork of artworks) {
     const key = artworkCoordsKey(artwork);
     const coords = key ? requested.get(key) : undefined;
-    const artworkSource = artworkSourceUrl(artwork, seriesById?.get(artwork.seriesID ?? ''));
+    const series = seriesById?.get(artwork.seriesID ?? '');
+    const artworkSource = artworkSourceUrl(artwork, series);
     if (coords && artworkSource) {
-      findings.push({ coords, artworkSource });
+      const artists = feralFileArtists(series ?? artwork.series ?? undefined);
+      findings.push({ coords, artworkSource, ...(artists.length > 0 ? { artists } : {}) });
     }
   }
   return findings;
+}
+
+/**
+ * feralFileArtists credits the series artist and any collaborators from the
+ * alumni account a series record embeds -- the series the adapter fetches for
+ * a series or exhibition page, or the partial one `?includeArtist=true`
+ * attaches to a single artwork -- so the profile never costs a request of
+ * its own.
+ *
+ * Wallets are the per-chain `addresses` map plus `associatedAddresses`;
+ * `avatarDisplay` is a Cloudflare Images URL. The alumni record on a series
+ * carries no bio or website — those live on a separate alumni endpoint this
+ * adapter does not call.
+ */
+function feralFileArtists(
+  series: Pick<FeralFileSeriesSourceRecord, 'artist'> | undefined
+): FindingArtist[] {
+  const account = series?.artist?.alumniAccount;
+  if (!account) return [];
+  const accounts = [account, ...(account.collaborationAlumniAccounts ?? [])];
+  return accounts.flatMap((alumni) => {
+    const cleaned = alumni
+      ? cleanFindingArtist({
+          name: alumni.alias?.trim() || alumni.fullName,
+          addresses: [
+            ...Object.values(alumni.addresses ?? {}),
+            ...(alumni.associatedAddresses ?? []),
+          ],
+          slug: alumni.slug,
+          avatar: alumni.avatarDisplay,
+        })
+      : null;
+    return cleaned ? [cleaned] : [];
+  });
 }
 
 /**

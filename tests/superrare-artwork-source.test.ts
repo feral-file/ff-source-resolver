@@ -198,6 +198,98 @@ describe('SuperRare artwork source enrichment', () => {
     );
   });
 
+  test('credits the API creator from their profile; page-state tokens carry no artist', async () => {
+    const fromApi = token('1');
+    const fromPage = token('2');
+    const html = embeddedNftHtml(fromPage, { image: { uri: 'https://cdn.example/page-state.png' } });
+    const fetchImpl = async (): Promise<Response> =>
+      Response.json({
+        data: {
+          getNfts: {
+            nfts: [
+              {
+                ...apiNft(fromApi, {
+                  mediaDetails: { original: { image: { uri: 'https://cdn.example/api.png' } } },
+                }),
+                creator: {
+                  defaultAddress: '0xAbCd000000000000000000000000000000000001',
+                  addresses: [
+                    { address: '0xAbCd000000000000000000000000000000000001' },
+                    { address: '0x0000000000000000000000000000000000000002' },
+                  ],
+                  profile: {
+                    username: 'xcopy',
+                    fullName: ' XCOPY ',
+                    bio: 'Crypto art.',
+                    avatarUrl: 'https://cdn.example/xcopy.png',
+                  },
+                },
+              },
+            ],
+          },
+        },
+      });
+
+    const findings = await resolveSuperRareArtworkSources(
+      new URL(`https://superrare.com/collection/${CONTRACT}`),
+      [fromApi, fromPage],
+      fetchImpl as typeof fetch,
+      { html }
+    );
+
+    assert.deepEqual(findings, [
+      {
+        coords: fromApi,
+        artworkSource: 'https://cdn.example/api.png',
+        artists: [
+          {
+            name: 'XCOPY',
+            addresses: [
+              '0xAbCd000000000000000000000000000000000001',
+              '0x0000000000000000000000000000000000000002',
+            ],
+            bio: 'Crypto art.',
+            avatar: 'https://cdn.example/xcopy.png',
+          },
+        ],
+      },
+      { coords: fromPage, artworkSource: 'https://cdn.example/page-state.png' },
+    ]);
+  });
+
+  test('falls back to the username when the profile has no full name', async () => {
+    const only = token('1');
+    const fetchImpl = async (): Promise<Response> =>
+      Response.json({
+        data: {
+          getNfts: {
+            nfts: [
+              {
+                ...apiNft(only, {
+                  mediaDetails: { original: { image: { uri: 'https://cdn.example/a.png' } } },
+                }),
+                creator: {
+                  defaultAddress: '0x0000000000000000000000000000000000000003',
+                  addresses: [],
+                  profile: { username: 'anon', fullName: '', bio: null, avatarUrl: null },
+                },
+              },
+            ],
+          },
+        },
+      });
+
+    const findings = await resolveSuperRareArtworkSources(
+      new URL(`https://superrare.com/collection/${CONTRACT}`),
+      [only],
+      fetchImpl as typeof fetch
+    );
+
+    assert.deepEqual(findings[0]?.artists, [
+      { name: 'anon', addresses: ['0x0000000000000000000000000000000000000003'] },
+    ]);
+  });
+
   test('caps GraphQL source batches at 100 tokens', async () => {
     const coords = Array.from({ length: 101 }, (_, index) => token(String(index + 1)));
     const batchSizes: number[] = [];

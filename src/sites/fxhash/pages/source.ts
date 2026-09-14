@@ -1,4 +1,5 @@
-import type { ArtworkSourceFinding, TokenCoords } from '../../../types';
+import { cleanFindingArtist } from '../../../helpers';
+import type { ArtworkSourceFinding, FindingArtist, TokenCoords } from '../../../types';
 import { parseFxhashIteration } from './iteration';
 import { parseFxhashProject } from './project';
 import { parseFxhashGentk } from './gentk';
@@ -12,12 +13,22 @@ const PUBLIC_IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
 const PUBLIC_ARWEAVE_GATEWAY = 'https://arweave.net/';
 const FXHASH_ONCHFS_GATEWAY = 'https://onchfs.fxhash2.xyz/';
 
+/**
+ * The author fragment rides on the queries the adapter already sends, so an
+ * artist profile costs no extra request. A project authored by a collab
+ * contract reports the contract as `author` (type COLLAB_CONTRACT_V1, id a
+ * KT1) and the people behind it in `collaborators`; see `fxhashArtists`.
+ */
+const AUTHOR_FRAGMENT =
+  'id name type description avatarUri collaborators { id name description avatarUri }';
+
 const ITERATION_ARTWORK_SOURCE_QUERY = `
   query ResolveFxhashIterationArtworkSource($slug: String!) {
     objkt(slug: $slug) {
       onChainId
       gentkContractAddress
       metadata
+      issuer { author { ${AUTHOR_FRAGMENT} } }
     }
   }
 `;
@@ -25,6 +36,7 @@ const ITERATION_ARTWORK_SOURCE_QUERY = `
 const PROJECT_ARTWORK_SOURCES_QUERY = `
   query ResolveFxhashProjectArtworkSources($slug: String!) {
     generativeToken(slug: $slug) {
+      author { ${AUTHOR_FRAGMENT} }
       entireCollection {
         onChainId
         gentkContractAddress
@@ -34,16 +46,27 @@ const PROJECT_ARTWORK_SOURCES_QUERY = `
   }
 `;
 
+interface FxhashUser {
+  id?: string | null;
+  name?: string | null;
+  type?: string | null;
+  description?: string | null;
+  avatarUri?: string | null;
+  collaborators?: Array<FxhashUser | null> | null;
+}
+
 interface FxhashObjktArtworkSource {
   onChainId?: number | string | null;
   gentkContractAddress?: string | null;
   metadata?: unknown;
+  issuer?: { author?: FxhashUser | null } | null;
 }
 
 interface FxhashArtworkSourceResponse {
   data?: {
     objkt?: FxhashObjktArtworkSource | null;
     generativeToken?: {
+      author?: FxhashUser | null;
       entireCollection?: Array<FxhashObjktArtworkSource | null> | null;
     } | null;
   };
@@ -86,7 +109,7 @@ export async function resolveFxhashArtworkSources(
   }
 
   const body = (await response.json().catch(() => null)) as FxhashArtworkSourceResponse | null;
-  return findingsFromObjkts(responseObjkts(body), coords);
+  return findingsFromObjkts(responseObjkts(body), coords, responseArtists(body));
 }
 
 function artworkSourceRequest(
@@ -155,9 +178,45 @@ function responseObjkts(
   return data?.generativeToken?.entireCollection ?? [];
 }
 
+/**
+ * responseArtists reads the project's author from whichever query answered:
+ * an iteration carries it under `issuer`, a project at the top. Both shapes
+ * describe one project, so every finding of the response shares the list.
+ */
+function responseArtists(response: FxhashArtworkSourceResponse | null): FindingArtist[] {
+  const data = response?.data;
+  const author = data?.objkt ? data.objkt.issuer?.author : data?.generativeToken?.author;
+  return fxhashArtists(author);
+}
+
+/**
+ * fxhashArtists turns an fxhash author into the people it credits. A collab
+ * contract is not a person: its `id` is a KT1 and its `name` a label, so when
+ * fxhash lists `collaborators` those are the artists and the contract itself
+ * is not one of them. A regular user is the artist, and `id` is its wallet.
+ * `avatarUri` is an `ipfs://` URI, routed through the same public gateway as
+ * artifacts so the finding carries something a browser can load.
+ */
+function fxhashArtists(author: FxhashUser | null | undefined): FindingArtist[] {
+  if (!author) return [];
+  const people = author.collaborators?.length ? author.collaborators : [author];
+  return people.flatMap((user) => {
+    const cleaned = user
+      ? cleanFindingArtist({
+          name: user.name,
+          addresses: [user.id],
+          bio: user.description,
+          avatar: user.avatarUri ? browserUrlForArtifact(user.avatarUri) : null,
+        })
+      : null;
+    return cleaned ? [cleaned] : [];
+  });
+}
+
 function findingsFromObjkts(
   objkts: readonly (FxhashObjktArtworkSource | null)[],
-  expectedCoords: readonly TokenCoords[]
+  expectedCoords: readonly TokenCoords[],
+  artists: readonly FindingArtist[]
 ): readonly ArtworkSourceFinding[] {
   const expected = new Map(expectedCoords.map((coords) => [coordsKey(coords), coords]));
   const findings: ArtworkSourceFinding[] = [];
@@ -169,7 +228,7 @@ function findingsFromObjkts(
     const artifactUri = metadataArtifactUri(objkt?.metadata);
     const artworkSource = artifactUri ? browserUrlForArtifact(artifactUri) : null;
     if (coords && artworkSource) {
-      findings.push({ coords, artworkSource });
+      findings.push({ coords, artworkSource, ...(artists.length > 0 ? { artists } : {}) });
     }
   }
 

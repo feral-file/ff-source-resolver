@@ -1,3 +1,6 @@
+import { cleanFindingArtist } from '../../helpers';
+import type { FindingArtist } from '../../types';
+
 const RASTER_GRAPHQL_ENDPOINT = 'https://api.raster.art/graphql';
 /**
  * Raster caps the tokens connection at 250 rows and silently truncates a
@@ -32,7 +35,7 @@ export interface RasterArtworkWithTokens {
   id: string;
   title?: string;
   description?: string;
-  artists: ReadonlyArray<{ name: string }>;
+  artists: ReadonlyArray<FindingArtist>;
   platformName?: string;
   tokens: readonly RasterGraphqlToken[];
   hasMore: boolean;
@@ -45,7 +48,12 @@ interface RasterArtworkWithTokensResponse {
       id?: string | number;
       title?: string | null;
       description?: string | null;
-      artists?: Array<{ name?: string | null } | null> | null;
+      artists?: Array<{
+        name?: string | null;
+        slug?: string | null;
+        bio?: string | null;
+        addresses?: Array<string | null> | null;
+      } | null> | null;
       platform?: { name?: string | null } | null;
       tokens?: {
         totalCount?: number;
@@ -76,7 +84,7 @@ type RasterPageInfo = NonNullable<RasterTokenConnection['pageInfo']>;
 const RASTER_ARTWORK_WITH_TOKENS_QUERY =
   'query ArtworkWithTokens($slug: String!, $first: Int!, $after: String) {' +
   ' artworkBySlug(slug: $slug) {' +
-  ' id title description artists { name } platform { name }' +
+  ' id title description artists { name slug bio addresses } platform { name }' +
   ' tokens(first: $first, after: $after) {' +
   ' totalCount pageInfo { hasNextPage endCursor }' +
   ' nodes { chainId contractAddress tokenId tokenStandard name' +
@@ -152,9 +160,10 @@ export async function resolveRasterArtworkWithTokens(
         id: String(node.id),
         ...(node.title ? { title: node.title } : {}),
         ...(node.description ? { description: node.description } : {}),
-        artists: (node.artists ?? []).flatMap((artist): Array<{ name: string }> =>
-          artist?.name ? [{ name: artist.name }] : []
-        ),
+        artists: (node.artists ?? []).flatMap((artist): FindingArtist[] => {
+          const cleaned = artist ? graphqlArtist(artist) : null;
+          return cleaned ? [cleaned] : [];
+        }),
         ...(node.platform?.name ? { platformName: node.platform.name } : {}),
         tokens,
         hasMore: false,
@@ -247,4 +256,20 @@ export function rasterEnrichmentArtwork(context: unknown): RasterArtworkWithToke
   const candidate = artwork as RasterArtworkWithTokens;
   if (typeof candidate.id !== 'string' || !Array.isArray(candidate.tokens)) return null;
   return candidate;
+}
+
+/**
+ * graphqlArtist shapes one Raster artist for a finding. Everything here comes
+ * from the same artwork query, so the profile costs no extra request. Raster
+ * publishes no avatar and no links on its GraphQL `Artist`, so those stay
+ * absent. The response is treated as untrusted even where Raster's schema
+ * says non-null -- see `cleanFindingArtist` for the rules.
+ */
+function graphqlArtist(artist: {
+  name?: string | null;
+  slug?: string | null;
+  bio?: string | null;
+  addresses?: Array<string | null> | null;
+}): FindingArtist | null {
+  return cleanFindingArtist(artist);
 }

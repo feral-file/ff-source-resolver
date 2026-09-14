@@ -40,6 +40,19 @@ API, even when token coordinates can be parsed entirely from URL components.
 Collection enrichment can also request substantially more marketplace data.
 Failure to resolve an artwork URL does not discard valid token coordinates;
 `artworkSource` or the corresponding collection finding is simply omitted.
+Presentation fields on a finding (`title`, `description`, `artists`,
+`creditLine`, `thumbnail`) are best-effort and absent when the source does not
+expose them. An artist (`FindingArtist`) carries whatever profile the source
+publishes alongside the artwork — `addresses` (wallets, verbatim), `slug`,
+`bio`, `avatar` (an http(s) URL) and `links` (full URLs only) — and nothing is
+fetched just to fill it: every profile rides on a request the adapter already
+makes. Today that is Raster (wallets, slug, bio), fxhash (wallet, bio, avatar;
+collaborators for a collab contract), Objkt (wallets, bio, avatar, links),
+SuperRare (wallets, bio, avatar; API-resolved tokens only), Verse (slug, bio,
+links; series-query path only) and Feral File (wallets, slug, avatar — a single artwork asks its own
+request for the artist with `?includeArtist=true`). Art Blocks, OpenSea and
+NEORT publish no artist on the requests this package makes, so their findings
+carry none.
 Raw token coordinates do not identify a marketplace adapter and therefore
 cannot be enriched automatically.
 

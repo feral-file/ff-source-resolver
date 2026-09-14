@@ -38,7 +38,7 @@ interface RasterTokenDetail {
  */
 interface ArtworkLevelMeta {
   description?: string;
-  artists?: ReadonlyArray<{ name: string }>;
+  artists?: ArtworkSourceFinding['artists'];
   creditLine?: string;
 }
 

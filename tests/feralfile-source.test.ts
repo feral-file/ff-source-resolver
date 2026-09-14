@@ -20,7 +20,7 @@ describe('Feral File artwork source enrichment', () => {
     const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
       const url = input.toString();
       requested.push(url);
-      if (url === 'https://feralfile.com/api/artworks/artworkid') {
+      if (url === 'https://feralfile.com/api/artworks/artworkid?includeArtist=true') {
         return Response.json({
           result: {
             seriesID: 'series-id',
@@ -49,7 +49,7 @@ describe('Feral File artwork source enrichment', () => {
           'https://cdn.feralfileassets.com/previews/series-id/version/?edition_number=4',
       },
     ]);
-    assert.deepEqual(requested, ['https://feralfile.com/api/artworks/artworkid']);
+    assert.deepEqual(requested, ['https://feralfile.com/api/artworks/artworkid?includeArtist=true']);
   });
 
   test('prefers an HLS stream and pairs only requested coordinates', async () => {
@@ -89,11 +89,125 @@ describe('Feral File artwork source enrichment', () => {
     ]);
   });
 
+  test('credits the series artist and collaborators from the embedded alumni account', async () => {
+    const fetchImpl = feralFileFetch({
+      'https://feralfile.com/api/series/collab-series': {
+        id: 'series-id',
+        medium: 'video',
+        artist: {
+          ID: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da',
+          alumniAccount: {
+            alias: 'Jonas Lund',
+            fullName: 'Jonas Lund',
+            slug: 'jonas-lund-yw9',
+            addresses: { ethereum: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da', tezos: 'tz1JonasLund' },
+            associatedAddresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da', '0xAssociated'],
+            avatarURI: 'avatars/aDADzvsf/1638360786',
+            avatarDisplay: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+            collaborationAlumniAccounts: [
+              {
+                // No alias: the full name stands in.
+                alias: '',
+                fullName: 'Collab Partner',
+                slug: 'collab-partner',
+                addresses: { ethereum: '0xPartner' },
+                avatarDisplay: null,
+              },
+              null,
+            ],
+          },
+        },
+      },
+      'https://feralfile.com/api/artworks?seriesID=series-id': [
+        {
+          seriesID: 'series-id',
+          chain: 'ethereum',
+          contractAddress: ETH_COORDS.contract,
+          tokenID: ETH_COORDS.tokenId,
+          previewURI: 'previews/video/preview.mp4',
+        },
+      ],
+    });
+
+    const findings = await resolveFeralFileArtworkSources(
+      new URL('https://feralfile.com/exhibitions/series/collab-series'),
+      [ETH_COORDS],
+      fetchImpl
+    );
+
+    assert.deepEqual(findings[0]?.artists, [
+      {
+        name: 'Jonas Lund',
+        addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da', 'tz1JonasLund', '0xAssociated'],
+        slug: 'jonas-lund-yw9',
+        avatar: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+      },
+      { name: 'Collab Partner', addresses: ['0xPartner'], slug: 'collab-partner' },
+    ]);
+  });
+
+  test('credits a single artwork from the artist its own request embeds', async () => {
+    // The artwork record carries no artist, but `?includeArtist=true` makes
+    // the same request attach a partial series with the alumni account, so a
+    // direct preview is credited with exactly one request.
+    const requests: string[] = [];
+    const fetchImpl = feralFileFetch({
+      'https://feralfile.com/api/artworks/directartwork?includeArtist=true': {
+        id: 'directartwork',
+        seriesID: 'series-id',
+        chain: 'ethereum',
+        contractAddress: ETH_COORDS.contract,
+        tokenID: ETH_COORDS.tokenId,
+        previewURI: 'https://cdn.example/direct.mp4',
+        series: {
+          id: 'series-id',
+          medium: 'video',
+          artist: {
+            alumniAccount: {
+              alias: 'Jonas Lund',
+              slug: 'jonas-lund-yw9',
+              addresses: { ethereum: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da' },
+              avatarDisplay: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+            },
+          },
+        },
+      },
+    });
+    const counting = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push(String(input));
+      return fetchImpl(input, init);
+    }) as typeof fetch;
+
+    const findings = await resolveFeralFileArtworkSources(
+      new URL('https://feralfile.com/exhibitions/artwork/directartwork'),
+      [ETH_COORDS],
+      counting
+    );
+
+    assert.deepEqual(requests, [
+      'https://feralfile.com/api/artworks/directartwork?includeArtist=true',
+    ]);
+    assert.deepEqual(findings, [
+      {
+        coords: ETH_COORDS,
+        artworkSource: 'https://cdn.example/direct.mp4',
+        artists: [
+          {
+            name: 'Jonas Lund',
+            addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da'],
+            slug: 'jonas-lund-yw9',
+            avatar: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+          },
+        ],
+      },
+    ]);
+  });
+
   test('makes an unvaried Cloudflare image URL browser-loadable', async () => {
     const cloudflare =
       'https://imagedelivery.net/account/image-id';
     const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/artworks/artworkid': {
+      'https://feralfile.com/api/artworks/artworkid?includeArtist=true': {
         chain: 'ethereum',
         contractAddress: ETH_COORDS.contract,
         tokenID: ETH_COORDS.tokenId,
