@@ -132,3 +132,73 @@ test('Objkt artwork source normalizes decentralized original URIs', async () => 
     },
   ]);
 });
+
+test('Objkt artwork source credits creators from their holder profile', async () => {
+  const coords: TokenCoords = { chain: 'tezos', contract: CONTRACT, tokenId: '1000' };
+  const fetchImpl = async () =>
+    Response.json({
+      data: {
+        token: [
+          {
+            fa_contract: CONTRACT,
+            token_id: '1000',
+            artifact_uri: 'ipfs://QmArtifact',
+            creators: [
+              {
+                creator_address: 'tz1YokFzMR1hX4m4aBqgutxLSUKFDdNoYGEN',
+                holder: {
+                  alias: 'Ryan Thompson',
+                  description: 'Artist',
+                  logo: 'https://assets.objkt.media/file/assets-004/h/tz1Yok/logo?cb=47f4d5b4',
+                  twitter: 'https://x.com/RT_Artwork',
+                  instagram: null,
+                  website: null,
+                  ethereum: '0x1111111111111111111111111111111111111111',
+                },
+              },
+              // A creator Objkt has no profile for is not a nameless credit:
+              // it is dropped, and its wallet stays on provenance.
+              { creator_address: 'tz1UBZUkXpKGhYsP5KtzDNqLLchwF4uHrGjw', holder: { alias: null } },
+              { creator_address: 'tz1NoHolder', holder: null },
+            ],
+          },
+        ],
+      },
+    });
+
+  const result = await resolveObjktArtworkSources([coords], fetchImpl as typeof fetch);
+
+  assert.deepEqual(result[0]?.artists, [
+    {
+      name: 'Ryan Thompson',
+      addresses: [
+        'tz1YokFzMR1hX4m4aBqgutxLSUKFDdNoYGEN',
+        '0x1111111111111111111111111111111111111111',
+      ],
+      bio: 'Artist',
+      avatar: 'https://assets.objkt.media/file/assets-004/h/tz1Yok/logo?cb=47f4d5b4',
+      links: [{ url: 'https://x.com/RT_Artwork', type: 'twitter' }],
+    },
+  ]);
+});
+
+test('Objkt artwork source leaves artists absent when no creator has a profile', async () => {
+  const coords: TokenCoords = { chain: 'tezos', contract: CONTRACT, tokenId: '1' };
+  const fetchImpl = async () =>
+    Response.json({
+      data: {
+        token: [
+          {
+            fa_contract: CONTRACT,
+            token_id: '1',
+            artifact_uri: 'ipfs://QmArtifact',
+            creators: [{ creator_address: 'tz1UBZUkXpKGhYsP5KtzDNqLLchwF4uHrGjw', holder: { alias: null } }],
+          },
+        ],
+      },
+    });
+
+  const result = await resolveObjktArtworkSources([coords], fetchImpl as typeof fetch);
+
+  assert.deepEqual(result, [{ coords, artworkSource: 'https://ipfs.io/ipfs/QmArtifact' }]);
+});

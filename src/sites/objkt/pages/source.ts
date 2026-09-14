@@ -1,4 +1,5 @@
-import type { ArtworkSourceFinding, TokenCoords } from '../../../types';
+import { cleanFindingArtist } from '../../../helpers';
+import type { ArtworkSourceFinding, FindingArtist, TokenCoords } from '../../../types';
 
 const OBJKT_GRAPHQL_ENDPOINT = 'https://data.objkt.com/v3/graphql';
 const OBJKT_SOURCE_BATCH_SIZE = 100;
@@ -14,6 +15,18 @@ const TOKEN_ARTWORK_SOURCE_QUERY = `
       artifact_uri
       display_uri
       thumbnail_uri
+      creators {
+        creator_address
+        holder {
+          alias
+          description
+          logo
+          website
+          twitter
+          instagram
+          ethereum
+        }
+      }
     }
   }
 `;
@@ -24,12 +37,26 @@ interface ObjktArtworkSourceResponse {
   };
 }
 
+interface ObjktCreator {
+  creator_address?: string | null;
+  holder?: {
+    alias?: string | null;
+    description?: string | null;
+    logo?: string | null;
+    website?: string | null;
+    twitter?: string | null;
+    instagram?: string | null;
+    ethereum?: string | null;
+  } | null;
+}
+
 interface ObjktArtworkSourceToken {
   fa_contract?: string | null;
   token_id?: string | number | null;
   artifact_uri?: string | null;
   display_uri?: string | null;
   thumbnail_uri?: string | null;
+  creators?: Array<ObjktCreator | null> | null;
 }
 
 /**
@@ -60,7 +87,12 @@ export async function resolveObjktArtworkSources(
         token?.thumbnail_uri
       );
       if (tokenCoords && artworkSource) {
-        findings.push({ coords: tokenCoords, artworkSource });
+        const artists = objktArtists(token?.creators);
+        findings.push({
+          coords: tokenCoords,
+          artworkSource,
+          ...(artists.length > 0 ? { artists } : {}),
+        });
       }
     }
   }
@@ -136,6 +168,33 @@ function playableObjktUri(...candidates: Array<string | null | undefined>): stri
     }
   }
   return null;
+}
+
+/**
+ * objktArtists credits a token's on-chain creators, profiled from the
+ * `holder` row Objkt keeps per address. The creator address is the Tezos
+ * wallet that minted; a holder who linked an Ethereum wallet gets that one
+ * too. Objkt stores `twitter` / `instagram` / `website` as full URLs when the
+ * holder set them, so each becomes a typed link; `logo` is already an
+ * https URL on Objkt's asset CDN. A creator with no alias is not credited —
+ * DP-1 needs a name, and the address is still on the finding's provenance.
+ */
+function objktArtists(creators: ObjktArtworkSourceToken['creators']): FindingArtist[] {
+  return (creators ?? []).flatMap((creator) => {
+    const holder = creator?.holder;
+    const cleaned = cleanFindingArtist({
+      name: holder?.alias,
+      addresses: [creator?.creator_address, holder?.ethereum],
+      bio: holder?.description,
+      avatar: holder?.logo,
+      links: [
+        { url: holder?.website, type: 'website' },
+        { url: holder?.twitter, type: 'twitter' },
+        { url: holder?.instagram, type: 'instagram' },
+      ],
+    });
+    return cleaned ? [cleaned] : [];
+  });
 }
 
 function coordsKey({ chain, contract, tokenId }: TokenCoords): string {
