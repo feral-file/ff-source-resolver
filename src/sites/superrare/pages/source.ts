@@ -1,5 +1,7 @@
+import { cleanFindingArtist } from '../../../helpers';
 import type {
   ArtworkSourceFinding,
+  FindingArtist,
   ResolveArtworkSourcesContext,
   TokenCoords,
 } from '../../../types';
@@ -18,6 +20,11 @@ const ARTWORK_SOURCES_QUERY = `
         chainId
         contractAddress
         tokenId
+        creator {
+          defaultAddress
+          addresses { address }
+          profile { username fullName bio avatarUrl }
+        }
         metadata {
           mediaDetails {
             original {
@@ -47,10 +54,22 @@ interface SuperRareOriginalMedia {
   image?: (SuperRareMediaResource & { isAnimated?: boolean | null }) | null;
 }
 
+interface SuperRareCreator {
+  defaultAddress?: string | null;
+  addresses?: Array<{ address?: string | null } | null> | null;
+  profile?: {
+    username?: string | null;
+    fullName?: string | null;
+    bio?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+}
+
 interface SuperRareApiNft {
   chainId?: string | number | null;
   contractAddress?: string | null;
   tokenId?: string | number | null;
+  creator?: SuperRareCreator | null;
   metadata?: {
     mediaDetails?: {
       original?: SuperRareOriginalMedia | null;
@@ -85,16 +104,22 @@ export async function resolveSuperRareArtworkSources(
 
   const sources = sourcesFromHtml(context?.html ?? null, expected);
   const unresolved = expected.filter((token) => !sources.has(coordsKey(token)));
+  // Only the API names the creator; a token whose source came from page state
+  // is not looked up again for its artist, so it carries none.
+  const artists = new Map<string, FindingArtist[]>();
 
   for (let offset = 0; offset < unresolved.length; offset += SUPER_RARE_SOURCE_BATCH_SIZE) {
     const batch = unresolved.slice(offset, offset + SUPER_RARE_SOURCE_BATCH_SIZE);
     const nfts = await fetchArtworkSourceBatch(batch, fetchImpl);
-    collectApiSources(sources, batch, nfts);
+    collectApiSources(sources, artists, batch, nfts);
   }
 
   return expected.flatMap((token) => {
-    const artworkSource = sources.get(coordsKey(token));
-    return artworkSource ? [{ coords: token, artworkSource }] : [];
+    const key = coordsKey(token);
+    const artworkSource = sources.get(key);
+    if (!artworkSource) return [];
+    const credited = artists.get(key) ?? [];
+    return [{ coords: token, artworkSource, ...(credited.length > 0 ? { artists: credited } : {}) }];
   });
 }
 
@@ -141,6 +166,7 @@ async function fetchArtworkSourceBatch(
 
 function collectApiSources(
   sources: Map<string, string>,
+  artists: Map<string, FindingArtist[]>,
   expectedCoords: readonly TokenCoords[],
   nfts: readonly (SuperRareApiNft | null)[]
 ): void {
@@ -156,8 +182,27 @@ function collectApiSources(
     );
     if (source) {
       sources.set(coordsKey(coords), source);
+      artists.set(coordsKey(coords), superRareArtists(nft?.creator));
     }
   }
+}
+
+/**
+ * superRareArtists credits the NFT's creator from the profile SuperRare keeps
+ * per user. The display name is the profile's full name, falling back to the
+ * username; the wallets are the default address plus every linked one.
+ * SuperRare's public `Profile` exposes no social links, so none are carried.
+ */
+function superRareArtists(creator: SuperRareCreator | null | undefined): FindingArtist[] {
+  if (!creator) return [];
+  const profile = creator.profile;
+  const cleaned = cleanFindingArtist({
+    name: profile?.fullName?.trim() || profile?.username,
+    addresses: [creator.defaultAddress, ...(creator.addresses ?? []).map((a) => a?.address)],
+    bio: profile?.bio,
+    avatar: profile?.avatarUrl,
+  });
+  return cleaned ? [cleaned] : [];
 }
 
 function apiNftCoords(nft: SuperRareApiNft | null): TokenCoords | null {
