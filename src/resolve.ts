@@ -1,4 +1,4 @@
-import { normalizeParsedFindInput, normalizeParsedFindInputs } from './helpers';
+import { cleanArtistAddresses, normalizeParsedFindInput, normalizeParsedFindInputs } from './helpers';
 import { parseFindInput } from './parse';
 import { matchSite } from './site-utils';
 import { siteAdapters } from './sites';
@@ -364,7 +364,12 @@ function optionalFindingArtists(
 ): Partial<ArtworkSourceFinding> {
   const named = (artists ?? []).flatMap((artist) => {
     const name = artist.name.replace(/\s+/g, ' ').trim();
-    return name ? [{ name }] : [];
+    if (!name) return [];
+    // Cleaned here as well as in the adapter: this is the one path every
+    // finding leaves the package through, so a future adapter that skips the
+    // cleaning still hands callers the shape `FindingArtist` promises.
+    const addresses = cleanArtistAddresses(artist.addresses);
+    return addresses.length > 0 ? [{ name, addresses }] : [{ name }];
   });
   return named.length > 0 ? { artists: named } : {};
 }

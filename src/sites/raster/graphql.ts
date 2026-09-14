@@ -1,3 +1,6 @@
+import { cleanArtistAddresses } from '../../helpers';
+import type { FindingArtist } from '../../types';
+
 const RASTER_GRAPHQL_ENDPOINT = 'https://api.raster.art/graphql';
 /**
  * Raster caps the tokens connection at 250 rows and silently truncates a
@@ -32,7 +35,7 @@ export interface RasterArtworkWithTokens {
   id: string;
   title?: string;
   description?: string;
-  artists: ReadonlyArray<{ name: string }>;
+  artists: ReadonlyArray<FindingArtist>;
   platformName?: string;
   tokens: readonly RasterGraphqlToken[];
   hasMore: boolean;
@@ -45,7 +48,10 @@ interface RasterArtworkWithTokensResponse {
       id?: string | number;
       title?: string | null;
       description?: string | null;
-      artists?: Array<{ name?: string | null } | null> | null;
+      artists?: Array<{
+        name?: string | null;
+        addresses?: Array<string | null> | null;
+      } | null> | null;
       platform?: { name?: string | null } | null;
       tokens?: {
         totalCount?: number;
@@ -76,7 +82,7 @@ type RasterPageInfo = NonNullable<RasterTokenConnection['pageInfo']>;
 const RASTER_ARTWORK_WITH_TOKENS_QUERY =
   'query ArtworkWithTokens($slug: String!, $first: Int!, $after: String) {' +
   ' artworkBySlug(slug: $slug) {' +
-  ' id title description artists { name } platform { name }' +
+  ' id title description artists { name addresses } platform { name }' +
   ' tokens(first: $first, after: $after) {' +
   ' totalCount pageInfo { hasNextPage endCursor }' +
   ' nodes { chainId contractAddress tokenId tokenStandard name' +
@@ -152,8 +158,8 @@ export async function resolveRasterArtworkWithTokens(
         id: String(node.id),
         ...(node.title ? { title: node.title } : {}),
         ...(node.description ? { description: node.description } : {}),
-        artists: (node.artists ?? []).flatMap((artist): Array<{ name: string }> =>
-          artist?.name ? [{ name: artist.name }] : []
+        artists: (node.artists ?? []).flatMap((artist): FindingArtist[] =>
+          artist?.name ? [graphqlArtist(artist.name, artist.addresses)] : []
         ),
         ...(node.platform?.name ? { platformName: node.platform.name } : {}),
         tokens,
@@ -247,4 +253,16 @@ export function rasterEnrichmentArtwork(context: unknown): RasterArtworkWithToke
   const candidate = artwork as RasterArtworkWithTokens;
   if (typeof candidate.id !== 'string' || !Array.isArray(candidate.tokens)) return null;
   return candidate;
+}
+
+/**
+ * graphqlArtist shapes one Raster artist for a finding. Raster's `addresses`
+ * is a non-null list of non-null strings in its schema, but the response is
+ * still treated as untrusted, and an artist Raster reports no wallet for gets
+ * no `addresses` key rather than an empty list, so a caller can test presence
+ * alone.
+ */
+function graphqlArtist(name: string, addresses: Array<string | null> | null | undefined): FindingArtist {
+  const cleaned = cleanArtistAddresses(addresses);
+  return cleaned.length > 0 ? { name, addresses: cleaned } : { name };
 }

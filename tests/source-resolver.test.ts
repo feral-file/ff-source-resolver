@@ -1474,7 +1474,15 @@ describe('resolveTokenInfos collection support', () => {
         artworkSource: 'https://arweave.net/original-95',
         title: 'Split Logic #95',
         description: 'A study in halves.',
-        artists: [{ name: 'Ricky Retouch' }],
+        artists: [
+          {
+            name: 'Ricky Retouch',
+            addresses: [
+              '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
+              'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',
+            ],
+          },
+        ],
         creditLine: 'Raster Editions',
         standard: 'erc721',
       },
@@ -1483,7 +1491,15 @@ describe('resolveTokenInfos collection support', () => {
         artworkSource: 'https://generator.example/100',
         title: 'Split Logic #1',
         description: 'A study in halves.',
-        artists: [{ name: 'Ricky Retouch' }],
+        artists: [
+          {
+            name: 'Ricky Retouch',
+            addresses: [
+              '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
+              'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',
+            ],
+          },
+        ],
         creditLine: 'Raster Editions',
         metadataUri: 'https://api.example/token/100',
         standard: 'erc721',
@@ -2827,7 +2843,19 @@ function rasterGraphqlFirstFetch(
             id: 2886465,
             title: 'Split Logic',
             description: 'A study in halves.',
-            artists: [{ name: 'Ricky Retouch' }],
+            artists: [
+              {
+                name: 'Ricky Retouch',
+                // One blank and one repeat: the public path must hand callers
+                // the cleaned list, not just whatever the adapter produced.
+                addresses: [
+                  '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
+                  ' ',
+                  'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',
+                  '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
+                ],
+              },
+            ],
             platform: { name: 'Raster Editions' },
             tokens: {
               totalCount: 2,

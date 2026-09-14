@@ -7,6 +7,22 @@ export interface TokenCoords {
 }
 
 /**
+ * FindingArtist is one creator credited by the source.
+ *
+ * `addresses` are the wallets the source attributes to that artist, verbatim
+ * apart from trimming and de-duplication: EVM addresses arrive in whatever
+ * case the source uses and Tezos addresses are case-sensitive, so this package
+ * normalises neither. It is present only when the source reports at least one
+ * wallet. Which of those wallets a caller may treat as an identity -- DP-1, for
+ * one, refuses contract addresses -- is the caller's rule, not this package's:
+ * the library extracts source identity, it does not build display documents.
+ */
+export interface FindingArtist {
+  name: string;
+  addresses?: readonly string[];
+}
+
+/**
  * ArtworkSourceFinding pairs token identity with a browser-loadable artwork
  * URL returned by a marketplace page or keyless public API.
  *
@@ -20,7 +36,7 @@ export interface ArtworkSourceFinding {
   artworkSource: string;
   title?: string;
   description?: string;
-  artists?: ReadonlyArray<{ name: string }>;
+  artists?: ReadonlyArray<FindingArtist>;
   creditLine?: string;
   /** Browser-loadable still image for thumbnails, not the artwork itself. */
   thumbnail?: string;

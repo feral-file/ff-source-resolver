@@ -40,6 +40,10 @@ API, even when token coordinates can be parsed entirely from URL components.
 Collection enrichment can also request substantially more marketplace data.
 Failure to resolve an artwork URL does not discard valid token coordinates;
 `artworkSource` or the corresponding collection finding is simply omitted.
+Presentation fields on a finding (`title`, `description`, `artists`,
+`creditLine`, `thumbnail`) are best-effort and absent when the source does not
+expose them; an artist carries `addresses` — the wallets the source attributes
+to them, verbatim — only from sources that publish wallets (Raster today).
 Raw token coordinates do not identify a marketplace adapter and therefore
 cannot be enriched automatically.
 

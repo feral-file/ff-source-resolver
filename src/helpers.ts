@@ -92,3 +92,27 @@ export function normalizeParsedFindInputs(results: readonly ParsedFindInput[]): 
 export function hasHostMatch(host: string, hosts: readonly string[]): boolean {
   return hosts.some((candidate) => host === candidate || host.endsWith(`.${candidate}`));
 }
+
+/**
+ * cleanArtistAddresses returns the wallets an adapter reported for one artist
+ * as a finding must carry them: trimmed, with blanks and nulls dropped and
+ * duplicates collapsed in first-seen order. Nothing else is touched -- EVM case
+ * is kept as the source wrote it and Tezos is case-sensitive -- because which
+ * wallets count as an identity is the caller's rule, not this package's.
+ *
+ * Both the Raster adapter and `optionalFindingArtists` on the public path call
+ * this, so an adapter that forgets to clean is still caught before a caller
+ * sees the finding, and the two can never disagree on what "clean" means.
+ */
+export function cleanArtistAddresses(
+  addresses: ReadonlyArray<string | null | undefined> | null | undefined
+): string[] {
+  return Array.from(
+    new Set(
+      (addresses ?? []).flatMap((address) => {
+        const trimmed = address?.trim() ?? '';
+        return trimmed ? [trimmed] : [];
+      })
+    )
+  );
+}
