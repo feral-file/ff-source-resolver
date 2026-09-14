@@ -13,6 +13,7 @@ export type {
   ArtworkSourceFinding,
   FeralFileUrlKind,
   FindingArtist,
+  FindingArtistLink,
   HeadlessPageRenderer,
   IndexerChain,
   MarketplaceSource,

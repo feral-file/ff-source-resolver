@@ -1,4 +1,4 @@
-import { cleanArtistAddresses } from '../../helpers';
+import { cleanFindingArtist } from '../../helpers';
 import type { FindingArtist } from '../../types';
 
 const RASTER_GRAPHQL_ENDPOINT = 'https://api.raster.art/graphql';
@@ -160,9 +160,10 @@ export async function resolveRasterArtworkWithTokens(
         id: String(node.id),
         ...(node.title ? { title: node.title } : {}),
         ...(node.description ? { description: node.description } : {}),
-        artists: (node.artists ?? []).flatMap((artist): FindingArtist[] =>
-          artist?.name ? [graphqlArtist(artist)] : []
-        ),
+        artists: (node.artists ?? []).flatMap((artist): FindingArtist[] => {
+          const cleaned = artist ? graphqlArtist(artist) : null;
+          return cleaned ? [cleaned] : [];
+        }),
         ...(node.platform?.name ? { platformName: node.platform.name } : {}),
         tokens,
         hasMore: false,
@@ -259,27 +260,16 @@ export function rasterEnrichmentArtwork(context: unknown): RasterArtworkWithToke
 
 /**
  * graphqlArtist shapes one Raster artist for a finding. Everything here comes
- * from the same artwork query, so the profile costs no extra request. The
- * response is treated as untrusted even where Raster's schema says non-null:
- * a wallet list that cleans to nothing, a null or blank `bio` ("null unless
- * published", per Raster) or `slug` each leave their key absent rather than
- * empty, so a caller can test presence alone. `bio` keeps its internal blank
- * lines -- Raster separates paragraphs with them -- and is trimmed at the ends
- * only.
+ * from the same artwork query, so the profile costs no extra request. Raster
+ * publishes no avatar and no links on its GraphQL `Artist`, so those stay
+ * absent. The response is treated as untrusted even where Raster's schema
+ * says non-null -- see `cleanFindingArtist` for the rules.
  */
 function graphqlArtist(artist: {
   name?: string | null;
   slug?: string | null;
   bio?: string | null;
   addresses?: Array<string | null> | null;
-}): FindingArtist {
-  const addresses = cleanArtistAddresses(artist.addresses);
-  const slug = artist.slug?.trim() ?? '';
-  const bio = artist.bio?.trim() ?? '';
-  return {
-    name: artist.name ?? '',
-    ...(addresses.length > 0 ? { addresses } : {}),
-    ...(slug ? { slug } : {}),
-    ...(bio ? { bio } : {}),
-  };
+}): FindingArtist | null {
+  return cleanFindingArtist(artist);
 }

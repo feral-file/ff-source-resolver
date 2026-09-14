@@ -7,15 +7,30 @@ export interface TokenCoords {
 }
 
 /**
- * FindingArtist is one creator credited by the source.
+ * FindingArtistLink is one external profile link the source publishes for an
+ * artist. `url` is always a full http(s) URL -- a bare handle the source holds
+ * (a Twitter username, say) is dropped rather than turned into a URL, because
+ * building one means knowing each network's URL scheme, which is the caller's
+ * business to keep current. `type` is the source's own label for the link
+ * (`website`, `twitter`, `instagram`, ...) when it has one, verbatim.
+ */
+export interface FindingArtistLink {
+  url: string;
+  type?: string;
+}
+
+/**
+ * FindingArtist is one creator credited by the source. Only `name` is
+ * required; every other field is the source's profile of that artist and is
+ * present only when the source publishes it. All of it is verbatim apart from
+ * trimming, de-duplication and dropping what could never be valid, because
+ * the library extracts source identity and does not build display documents.
  *
- * `addresses` are the wallets the source attributes to that artist, verbatim
- * apart from trimming and de-duplication: EVM addresses arrive in whatever
- * case the source uses and Tezos addresses are case-sensitive, so this package
- * normalises neither. It is present only when the source reports at least one
- * wallet. Which of those wallets a caller may treat as an identity -- DP-1, for
- * one, refuses contract addresses -- is the caller's rule, not this package's:
- * the library extracts source identity, it does not build display documents.
+ * `addresses` are the wallets the source attributes to that artist. EVM
+ * addresses arrive in whatever case the source uses and Tezos addresses are
+ * case-sensitive, so this package normalises neither. Which of those wallets a
+ * caller may treat as an identity -- DP-1, for one, refuses contract
+ * addresses -- is the caller's rule, not this package's.
  */
 export interface FindingArtist {
   name: string;
@@ -27,10 +42,13 @@ export interface FindingArtist {
   slug?: string;
   /**
    * The source's published biography as plain text, paragraphs separated by
-   * blank lines, trimmed at the ends only. Present only when the source has
-   * published one.
+   * blank lines, trimmed at the ends only. Markup is not stripped: a source
+   * that publishes markdown hands it over as markdown.
    */
   bio?: string;
+  /** A browser-loadable http(s) URL of the artist's portrait or profile image. */
+  avatar?: string;
+  links?: ReadonlyArray<FindingArtistLink>;
 }
 
 /**
