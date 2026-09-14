@@ -43,6 +43,105 @@ describe('fxhash artwork source enrichment', () => {
     ]);
   });
 
+  test('credits the project author on every iteration, avatar routed through the gateway', async () => {
+    const fetchImpl = graphqlFetch(() => ({
+      data: {
+        objkt: {
+          onChainId: 146207,
+          gentkContractAddress: LEGACY_COORDS.contract,
+          metadata: { artifactUri: 'ipfs://QmLiveArtifact' },
+          issuer: {
+            author: {
+              id: 'tz1fepn7jZsCYBqCDhpM63hzh9g2Ytqk4Tpv',
+              name: 'fxhash',
+              type: 'REGULAR',
+              description: 'The fxhash admin? account',
+              avatarUri: 'ipfs://QmURUAU4YPa6Wwco3JSVrcN7WfCrFBZH7hY51BLrc87WjM',
+              collaborators: null,
+            },
+          },
+        },
+      },
+    }));
+
+    const findings = await resolveFxhashArtworkSources(
+      new URL('https://www.fxhash.xyz/iteration/garden-monoliths-215'),
+      [LEGACY_COORDS],
+      fetchImpl as typeof fetch
+    );
+
+    assert.deepEqual(findings[0]?.artists, [
+      {
+        name: 'fxhash',
+        addresses: ['tz1fepn7jZsCYBqCDhpM63hzh9g2Ytqk4Tpv'],
+        bio: 'The fxhash admin? account',
+        avatar: 'https://ipfs.io/ipfs/QmURUAU4YPa6Wwco3JSVrcN7WfCrFBZH7hY51BLrc87WjM',
+      },
+    ]);
+  });
+
+  test('credits the collaborators, not the collab contract, on a project', async () => {
+    // A collab contract is the author of record but not a person: its id is a
+    // KT1 and its name a label. fxhash lists the people in `collaborators`.
+    const coords: TokenCoords[] = [
+      { chain: 'tezos', contract: 'KT1Project', tokenId: '2' },
+      { chain: 'tezos', contract: 'KT1Project', tokenId: '3' },
+    ];
+    const fetchImpl = graphqlFetch(() => ({
+      data: {
+        generativeToken: {
+          author: {
+            id: 'KT1CollabContract',
+            name: 'A & B',
+            type: 'COLLAB_CONTRACT_V1',
+            description: null,
+            avatarUri: null,
+            collaborators: [
+              { id: 'tz1AAA', name: 'Artist A', description: 'Draws.', avatarUri: null },
+              { id: 'tz1BBB', name: ' ', description: null, avatarUri: null },
+              { id: 'tz1CCC', name: 'Artist C', description: null, avatarUri: 'https://cdn.example/c.png' },
+            ],
+          },
+          entireCollection: [objkt(coords[0], 'ipfs://QmA'), objkt(coords[1], 'ipfs://QmB')],
+        },
+      },
+    }));
+
+    const findings = await resolveFxhashArtworkSources(
+      new URL('https://www.fxhash.xyz/project/garden-monoliths'),
+      coords,
+      fetchImpl as typeof fetch
+    );
+
+    const artists = [
+      { name: 'Artist A', addresses: ['tz1AAA'], bio: 'Draws.' },
+      { name: 'Artist C', addresses: ['tz1CCC'], avatar: 'https://cdn.example/c.png' },
+    ];
+    assert.deepEqual(
+      findings.map(({ artists: a }) => a),
+      [artists, artists]
+    );
+  });
+
+  test('leaves artists absent when the response names no author', async () => {
+    const fetchImpl = graphqlFetch(() => ({
+      data: {
+        generativeToken: {
+          author: null,
+          entireCollection: [objkt(LEGACY_COORDS, 'ipfs://QmA')],
+        },
+      },
+    }));
+    const findings = await resolveFxhashArtworkSources(
+      new URL('https://www.fxhash.xyz/project/garden-monoliths'),
+      [LEGACY_COORDS],
+      fetchImpl as typeof fetch
+    );
+    assert.deepEqual(findings, [
+      { coords: LEGACY_COORDS, artworkSource: 'https://ipfs.io/ipfs/QmA' },
+    ]);
+  });
+
   test('maps project IPFS, Arweave, ONCHFS, and direct HTTPS artifacts to their tokens', async () => {
     const coords: TokenCoords[] = [
       LEGACY_COORDS,
