@@ -108,13 +108,15 @@ describe('Raster token URL source enrichment', () => {
 });
 
 describe('Raster artwork source enrichment (GraphQL first)', () => {
-  test('carries each artist\'s wallets from GraphQL, cleaned but otherwise verbatim', async () => {
+  test('carries each artist\'s wallets, slug and bio from GraphQL, cleaned but otherwise verbatim', async () => {
     // Raster returns addresses as it holds them: EVM lower-cased, Tezos as-is,
     // mixed in one list. The library passes them through -- it extracts source
     // identity and does not decide which wallets a DP-1 consumer may keep --
     // but it does drop what could never be an address (blank, null, repeated)
     // so callers see one clean list per artist and no `addresses` at all when
-    // Raster reported none.
+    // Raster reported none. `slug` and `bio` follow the same rule: trimmed,
+    // absent when blank or null, and a bio keeps the blank lines Raster uses
+    // to separate paragraphs.
     const coords = [ethereumCoords('95')];
     const graphql = graphqlArtwork({
       tokens: [graphqlToken('95', { contentUrl: 'ar://original-95' })],
@@ -122,6 +124,8 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     graphql.data.artworkBySlug.artists = [
       {
         name: 'Ricky Retouch',
+        slug: ' ricky-retouch ',
+        bio: `  ${RICKY_BIO}\n`,
         addresses: [
           ' 0x4dcd6e38ba2f812a580b9786e89b313d19e8e999 ',
           '',
@@ -130,7 +134,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
           '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
         ],
       },
-      { name: 'Anonymous', addresses: [] },
+      { name: 'Anonymous', addresses: [], slug: '', bio: null },
       { name: 'Legacy' },
       { name: '', addresses: ['0x50af54edabe7fe57ae74f6d9c438aa5a80846513'] },
     ];
@@ -139,7 +143,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
     const findings = await resolveRasterArtworkSources(new URL(ARTWORK_URL), coords, fetchImpl);
 
     assert.deepEqual(findings[0]?.artists, [
-      { name: 'Ricky Retouch', addresses: RICKY_ADDRESSES },
+      { name: 'Ricky Retouch', addresses: RICKY_ADDRESSES, ...RICKY_PROFILE },
       { name: 'Anonymous' },
       { name: 'Legacy' },
     ]);
@@ -178,7 +182,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         artworkSource: 'https://arweave.net/original-95',
         title: 'Split Logic #95',
         description: 'A study in halves.',
-        artists: [{ name: 'Ricky Retouch', addresses: RICKY_ADDRESSES }],
+        artists: [{ name: 'Ricky Retouch', addresses: RICKY_ADDRESSES, ...RICKY_PROFILE }],
         creditLine: 'Raster Editions',
         thumbnail: 'https://bits.raster.art/be18/be1857f37e4eb4a5/700.avif',
         standard: 'erc721',
@@ -189,7 +193,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
         // No per-token name, so the edition is titled the way Raster titles it.
         title: 'Split Logic #1',
         description: 'A study in halves.',
-        artists: [{ name: 'Ricky Retouch', addresses: RICKY_ADDRESSES }],
+        artists: [{ name: 'Ricky Retouch', addresses: RICKY_ADDRESSES, ...RICKY_PROFILE }],
         creditLine: 'Raster Editions',
         thumbnail: 'https://bits.raster.art/0123/0123456789abcdef/original',
         standard: 'erc721',
@@ -324,7 +328,7 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
           artwork: {
             id: '2886465',
             title: 'Split Logic',
-            artists: [{ name: 'Ricky Retouch', addresses: RICKY_ADDRESSES }],
+            artists: [{ name: 'Ricky Retouch', addresses: RICKY_ADDRESSES, ...RICKY_PROFILE }],
             tokens: [
               {
                 chainId: 'eip155:1',
@@ -640,7 +644,12 @@ function graphqlToken(
   };
 }
 
-/** The wallets `graphqlArtwork` reports for its one artist, as findings must carry them. */
+/** The profile `graphqlArtwork` reports for its one artist, as findings must carry it. */
+const RICKY_BIO = 'Ricky Retouch works in halves.\n\nEach half is a study.';
+const RICKY_PROFILE = {
+  slug: 'ricky-retouch',
+  bio: RICKY_BIO,
+} as const;
 const RICKY_ADDRESSES = [
   '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
   'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',
@@ -656,6 +665,8 @@ function graphqlArtwork(overrides: { tokens: object[] }): object {
         artists: [
           {
             name: 'Ricky Retouch',
+            slug: 'ricky-retouch',
+            bio: RICKY_BIO,
             addresses: [
               '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
               'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',

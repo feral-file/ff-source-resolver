@@ -369,7 +369,16 @@ function optionalFindingArtists(
     // finding leaves the package through, so a future adapter that skips the
     // cleaning still hands callers the shape `FindingArtist` promises.
     const addresses = cleanArtistAddresses(artist.addresses);
-    return addresses.length > 0 ? [{ name, addresses }] : [{ name }];
+    const slug = artist.slug?.trim() ?? '';
+    const bio = artist.bio?.trim() ?? '';
+    return [
+      {
+        name,
+        ...(addresses.length > 0 ? { addresses } : {}),
+        ...(slug ? { slug } : {}),
+        ...(bio ? { bio } : {}),
+      },
+    ];
   });
   return named.length > 0 ? { artists: named } : {};
 }

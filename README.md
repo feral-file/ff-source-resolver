@@ -42,8 +42,9 @@ Failure to resolve an artwork URL does not discard valid token coordinates;
 `artworkSource` or the corresponding collection finding is simply omitted.
 Presentation fields on a finding (`title`, `description`, `artists`,
 `creditLine`, `thumbnail`) are best-effort and absent when the source does not
-expose them; an artist carries `addresses` — the wallets the source attributes
-to them, verbatim — only from sources that publish wallets (Raster today).
+expose them; an artist carries `addresses` (the wallets the source attributes
+to them, verbatim), `slug` and `bio` (plain text) only from sources that
+publish them — Raster today, from the same GraphQL query as the artwork.
 Raw token coordinates do not identify a marketplace adapter and therefore
 cannot be enriched automatically.
 

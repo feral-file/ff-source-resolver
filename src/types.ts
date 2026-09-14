@@ -20,6 +20,17 @@ export interface TokenCoords {
 export interface FindingArtist {
   name: string;
   addresses?: readonly string[];
+  /**
+   * The source's own URL slug for the artist, when it has one. Producer-scoped:
+   * a label for building links back to the source, never an identity.
+   */
+  slug?: string;
+  /**
+   * The source's published biography as plain text, paragraphs separated by
+   * blank lines, trimmed at the ends only. Present only when the source has
+   * published one.
+   */
+  bio?: string;
 }
 
 /**

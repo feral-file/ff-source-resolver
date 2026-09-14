@@ -50,6 +50,8 @@ interface RasterArtworkWithTokensResponse {
       description?: string | null;
       artists?: Array<{
         name?: string | null;
+        slug?: string | null;
+        bio?: string | null;
         addresses?: Array<string | null> | null;
       } | null> | null;
       platform?: { name?: string | null } | null;
@@ -82,7 +84,7 @@ type RasterPageInfo = NonNullable<RasterTokenConnection['pageInfo']>;
 const RASTER_ARTWORK_WITH_TOKENS_QUERY =
   'query ArtworkWithTokens($slug: String!, $first: Int!, $after: String) {' +
   ' artworkBySlug(slug: $slug) {' +
-  ' id title description artists { name addresses } platform { name }' +
+  ' id title description artists { name slug bio addresses } platform { name }' +
   ' tokens(first: $first, after: $after) {' +
   ' totalCount pageInfo { hasNextPage endCursor }' +
   ' nodes { chainId contractAddress tokenId tokenStandard name' +
@@ -159,7 +161,7 @@ export async function resolveRasterArtworkWithTokens(
         ...(node.title ? { title: node.title } : {}),
         ...(node.description ? { description: node.description } : {}),
         artists: (node.artists ?? []).flatMap((artist): FindingArtist[] =>
-          artist?.name ? [graphqlArtist(artist.name, artist.addresses)] : []
+          artist?.name ? [graphqlArtist(artist)] : []
         ),
         ...(node.platform?.name ? { platformName: node.platform.name } : {}),
         tokens,
@@ -256,13 +258,28 @@ export function rasterEnrichmentArtwork(context: unknown): RasterArtworkWithToke
 }
 
 /**
- * graphqlArtist shapes one Raster artist for a finding. Raster's `addresses`
- * is a non-null list of non-null strings in its schema, but the response is
- * still treated as untrusted, and an artist Raster reports no wallet for gets
- * no `addresses` key rather than an empty list, so a caller can test presence
- * alone.
+ * graphqlArtist shapes one Raster artist for a finding. Everything here comes
+ * from the same artwork query, so the profile costs no extra request. The
+ * response is treated as untrusted even where Raster's schema says non-null:
+ * a wallet list that cleans to nothing, a null or blank `bio` ("null unless
+ * published", per Raster) or `slug` each leave their key absent rather than
+ * empty, so a caller can test presence alone. `bio` keeps its internal blank
+ * lines -- Raster separates paragraphs with them -- and is trimmed at the ends
+ * only.
  */
-function graphqlArtist(name: string, addresses: Array<string | null> | null | undefined): FindingArtist {
-  const cleaned = cleanArtistAddresses(addresses);
-  return cleaned.length > 0 ? { name, addresses: cleaned } : { name };
+function graphqlArtist(artist: {
+  name?: string | null;
+  slug?: string | null;
+  bio?: string | null;
+  addresses?: Array<string | null> | null;
+}): FindingArtist {
+  const addresses = cleanArtistAddresses(artist.addresses);
+  const slug = artist.slug?.trim() ?? '';
+  const bio = artist.bio?.trim() ?? '';
+  return {
+    name: artist.name ?? '',
+    ...(addresses.length > 0 ? { addresses } : {}),
+    ...(slug ? { slug } : {}),
+    ...(bio ? { bio } : {}),
+  };
 }

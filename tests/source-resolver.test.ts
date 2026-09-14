@@ -1481,6 +1481,8 @@ describe('resolveTokenInfos collection support', () => {
               '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
               'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',
             ],
+            slug: 'ricky-retouch',
+            bio: 'Ricky Retouch works in halves.',
           },
         ],
         creditLine: 'Raster Editions',
@@ -1498,6 +1500,8 @@ describe('resolveTokenInfos collection support', () => {
               '0x4dcd6e38ba2f812a580b9786e89b313d19e8e999',
               'tz2JyW132finpXHFNCSrHtcBEHRmwp5ffYks',
             ],
+            slug: 'ricky-retouch',
+            bio: 'Ricky Retouch works in halves.',
           },
         ],
         creditLine: 'Raster Editions',
@@ -2846,6 +2850,8 @@ function rasterGraphqlFirstFetch(
             artists: [
               {
                 name: 'Ricky Retouch',
+                slug: 'ricky-retouch',
+                bio: ' Ricky Retouch works in halves. ',
                 // One blank and one repeat: the public path must hand callers
                 // the cleaned list, not just whatever the adapter produced.
                 addresses: [
