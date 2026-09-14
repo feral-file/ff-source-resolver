@@ -1,5 +1,7 @@
+import { cleanFindingArtist } from '../../../helpers';
 import type {
   ArtworkSourceFinding,
+  FindingArtist,
   ResolveArtworkSourcesContext,
   TokenCoords,
 } from '../../../types';
@@ -15,6 +17,12 @@ const SERIES_ARTWORK_SOURCES_QUERY = `
     collectionsPage(request: { filter: { slugs: [$slug] }, first: 1 }) {
       nodes {
         artworks {
+          artist {
+            name
+            slug
+            bio
+            links { url }
+          }
           editions {
             tokenId
             contractInfo {
@@ -54,6 +62,15 @@ interface VerseSourceEdition {
     contractAddress?: string | null;
   } | null;
   staticAsset?: VerseStaticAsset | null;
+  /** The artwork's artist, attached to each of its editions by the series query. */
+  artists?: readonly FindingArtist[];
+}
+
+interface VersePerson {
+  name?: string | null;
+  slug?: string | null;
+  bio?: string | null;
+  links?: Array<{ url?: string | null } | null> | null;
 }
 
 interface VerseStaticAsset {
@@ -68,6 +85,7 @@ interface VerseArtworkSourcesResponse {
     collectionsPage?: {
       nodes?: Array<{
         artworks?: Array<{
+          artist?: VersePerson | null;
           editions?: Array<VerseSourceEdition | null> | null;
         } | null> | null;
       } | null> | null;
@@ -137,14 +155,33 @@ async function fetchVerseSeriesSources(
   const editions: VerseSourceEdition[] = [];
   for (const collection of body?.data?.collectionsPage?.nodes ?? []) {
     for (const artwork of collection?.artworks ?? []) {
+      const artists = verseArtists(artwork?.artist);
       for (const edition of artwork?.editions ?? []) {
         if (edition) {
-          editions.push(edition);
+          editions.push(artists.length > 0 ? { ...edition, artists } : edition);
         }
       }
     }
   }
   return editions;
+}
+
+/**
+ * verseArtists credits the artwork's artist from the `Person` Verse attaches
+ * to it in the same series query. Verse publishes a name, slug, bio and a
+ * list of untyped links; it exposes no wallet and no portrait, so those stay
+ * absent. Only the GraphQL series path carries this — a page resolved from
+ * Apollo state is not queried again for its artist.
+ */
+function verseArtists(person: VersePerson | null | undefined): FindingArtist[] {
+  if (!person) return [];
+  const cleaned = cleanFindingArtist({
+    name: person.name,
+    slug: person.slug,
+    bio: person.bio,
+    links: (person.links ?? []).map((link) => ({ url: link?.url })),
+  });
+  return cleaned ? [cleaned] : [];
 }
 
 async function fetchVerseHtml(url: URL, fetchImpl: typeof fetch): Promise<string | null> {
@@ -172,7 +209,11 @@ function addVerseSourceFindings(
     const tokenCoords = requested.get(key);
     const artworkSource = verseStaticAssetUrl(edition.staticAsset);
     if (tokenCoords && artworkSource && !findings.has(key)) {
-      findings.set(key, { coords: tokenCoords, artworkSource });
+      findings.set(key, {
+        coords: tokenCoords,
+        artworkSource,
+        ...(edition.artists?.length ? { artists: edition.artists } : {}),
+      });
     }
   }
 }

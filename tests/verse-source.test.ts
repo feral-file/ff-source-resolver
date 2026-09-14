@@ -136,3 +136,73 @@ function verseEdition(tokenId: string, staticAsset: object): object {
     staticAsset,
   };
 }
+
+test('Verse series source credits each artwork\'s artist on its editions', async () => {
+  const coords: TokenCoords[] = [
+    { chain: 'ethereum', contract: CONTRACT, tokenId: '1' },
+    { chain: 'ethereum', contract: CONTRACT, tokenId: '2' },
+    { chain: 'ethereum', contract: CONTRACT, tokenId: '3' },
+  ];
+  const fetchImpl = async () =>
+    Response.json({
+      data: {
+        collectionsPage: {
+          nodes: [
+            {
+              artworks: [
+                {
+                  artist: {
+                    name: 'Linali',
+                    slug: 'linali',
+                    bio: 'Draws with code.',
+                    // Untyped on Verse; a duplicate and a bare handle drop out.
+                    links: [
+                      { url: 'https://linali.example' },
+                      { url: 'https://linali.example' },
+                      { url: '@linali' },
+                      null,
+                    ],
+                  },
+                  editions: [
+                    verseEdition('1', { __typename: 'ImageAsset', baseUrl: 'https://cdn.example/1.png' }),
+                    verseEdition('2', { __typename: 'ImageAsset', baseUrl: 'https://cdn.example/2.png' }),
+                  ],
+                },
+                {
+                  // No person on record: the edition still resolves, uncredited.
+                  artist: null,
+                  editions: [
+                    verseEdition('3', { __typename: 'ImageAsset', baseUrl: 'https://cdn.example/3.png' }),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+  const result = await resolveVerseArtworkSources(
+    new URL('https://verse.works/series/example-series'),
+    coords,
+    fetchImpl as typeof fetch,
+    { html: '<html>series shell</html>' }
+  );
+
+  const linali = [
+    {
+      name: 'Linali',
+      slug: 'linali',
+      bio: 'Draws with code.',
+      links: [{ url: 'https://linali.example/' }],
+    },
+  ];
+  assert.deepEqual(
+    result.map(({ coords: c, artists }) => [c.tokenId, artists]),
+    [
+      ['1', linali],
+      ['2', linali],
+      ['3', undefined],
+    ]
+  );
+});
