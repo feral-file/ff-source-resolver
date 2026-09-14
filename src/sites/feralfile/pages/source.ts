@@ -24,6 +24,13 @@ interface FeralFileArtworkSourceRecord {
     alternativePreviewURI?: string | null;
     previewCloudFlareURL?: string | null;
   } | null;
+  /**
+   * Embedded by `?includeArtist=true` on the single-artwork endpoint. It is a
+   * partial series record -- id, medium and the artist, no preview fields --
+   * so it credits the artwork but cannot stand in for the series fetched as
+   * a preview fallback.
+   */
+  series?: Pick<FeralFileSeriesSourceRecord, 'id' | 'artist'> | null;
 }
 
 interface FeralFileAlumniAccount {
@@ -60,8 +67,12 @@ export async function resolveFeralFileArtworkSources(
 ): Promise<readonly ArtworkSourceFinding[]> {
   const artworkPage = parseFeralFileArtwork(url);
   if (artworkPage?.kind === 'ff-url') {
+    // `includeArtist` makes the same request also carry the series artist,
+    // which the artwork record does not hold on its own; the preview
+    // fallback below still needs the full series when there is no direct
+    // preview, since the embedded series has no preview fields.
     const artwork = await fetchFeralFileApi<FeralFileArtworkSourceRecord>(
-      `/api/artworks/${encodeURIComponent(artworkPage.identifier)}`,
+      `/api/artworks/${encodeURIComponent(artworkPage.identifier)}?includeArtist=true`,
       fetchImpl
     );
     if (!artwork) {
@@ -162,7 +173,7 @@ function sourceFindings(
     const series = seriesById?.get(artwork.seriesID ?? '');
     const artworkSource = artworkSourceUrl(artwork, series);
     if (coords && artworkSource) {
-      const artists = feralFileArtists(series);
+      const artists = feralFileArtists(series ?? artwork.series ?? undefined);
       findings.push({ coords, artworkSource, ...(artists.length > 0 ? { artists } : {}) });
     }
   }
@@ -171,18 +182,19 @@ function sourceFindings(
 
 /**
  * feralFileArtists credits the series artist and any collaborators from the
- * alumni account the series record already embeds, so the profile costs no
- * request beyond the series fetch the adapter makes anyway. That is also why
- * a single artwork URL is credited only when its series was fetched for the
- * preview fallback: the artwork record carries no artist, and this package
- * does not add a request just to name one.
+ * alumni account a series record embeds -- the series the adapter fetches for
+ * a series or exhibition page, or the partial one `?includeArtist=true`
+ * attaches to a single artwork -- so the profile never costs a request of
+ * its own.
  *
  * Wallets are the per-chain `addresses` map plus `associatedAddresses`;
  * `avatarDisplay` is a Cloudflare Images URL. The alumni record on a series
  * carries no bio or website — those live on a separate alumni endpoint this
  * adapter does not call.
  */
-function feralFileArtists(series: FeralFileSeriesSourceRecord | undefined): FindingArtist[] {
+function feralFileArtists(
+  series: Pick<FeralFileSeriesSourceRecord, 'artist'> | undefined
+): FindingArtist[] {
   const account = series?.artist?.alumniAccount;
   if (!account) return [];
   const accounts = [account, ...(account.collaborationAlumniAccounts ?? [])];

@@ -20,7 +20,7 @@ describe('Feral File artwork source enrichment', () => {
     const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
       const url = input.toString();
       requested.push(url);
-      if (url === 'https://feralfile.com/api/artworks/artworkid') {
+      if (url === 'https://feralfile.com/api/artworks/artworkid?includeArtist=true') {
         return Response.json({
           result: {
             seriesID: 'series-id',
@@ -49,7 +49,7 @@ describe('Feral File artwork source enrichment', () => {
           'https://cdn.feralfileassets.com/previews/series-id/version/?edition_number=4',
       },
     ]);
-    assert.deepEqual(requested, ['https://feralfile.com/api/artworks/artworkid']);
+    assert.deepEqual(requested, ['https://feralfile.com/api/artworks/artworkid?includeArtist=true']);
   });
 
   test('prefers an HLS stream and pairs only requested coordinates', async () => {
@@ -146,19 +146,31 @@ describe('Feral File artwork source enrichment', () => {
     ]);
   });
 
-  test('does not credit a single artwork whose series was never fetched', async () => {
-    // The artwork record carries no artist and the series is only fetched as
-    // a preview fallback; with a direct preview there is no second request,
-    // so there is no artist to credit either.
+  test('credits a single artwork from the artist its own request embeds', async () => {
+    // The artwork record carries no artist, but `?includeArtist=true` makes
+    // the same request attach a partial series with the alumni account, so a
+    // direct preview is credited with exactly one request.
     const requests: string[] = [];
     const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/artworks/directartwork': {
+      'https://feralfile.com/api/artworks/directartwork?includeArtist=true': {
         id: 'directartwork',
         seriesID: 'series-id',
         chain: 'ethereum',
         contractAddress: ETH_COORDS.contract,
         tokenID: ETH_COORDS.tokenId,
         previewURI: 'https://cdn.example/direct.mp4',
+        series: {
+          id: 'series-id',
+          medium: 'video',
+          artist: {
+            alumniAccount: {
+              alias: 'Jonas Lund',
+              slug: 'jonas-lund-yw9',
+              addresses: { ethereum: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da' },
+              avatarDisplay: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+            },
+          },
+        },
       },
     });
     const counting = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -172,15 +184,30 @@ describe('Feral File artwork source enrichment', () => {
       counting
     );
 
-    assert.deepEqual(requests, ['https://feralfile.com/api/artworks/directartwork']);
-    assert.deepEqual(findings, [{ coords: ETH_COORDS, artworkSource: 'https://cdn.example/direct.mp4' }]);
+    assert.deepEqual(requests, [
+      'https://feralfile.com/api/artworks/directartwork?includeArtist=true',
+    ]);
+    assert.deepEqual(findings, [
+      {
+        coords: ETH_COORDS,
+        artworkSource: 'https://cdn.example/direct.mp4',
+        artists: [
+          {
+            name: 'Jonas Lund',
+            addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da'],
+            slug: 'jonas-lund-yw9',
+            avatar: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+          },
+        ],
+      },
+    ]);
   });
 
   test('makes an unvaried Cloudflare image URL browser-loadable', async () => {
     const cloudflare =
       'https://imagedelivery.net/account/image-id';
     const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/artworks/artworkid': {
+      'https://feralfile.com/api/artworks/artworkid?includeArtist=true': {
         chain: 'ethereum',
         contractAddress: ETH_COORDS.contract,
         tokenID: ETH_COORDS.tokenId,
