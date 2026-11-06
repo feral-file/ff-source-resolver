@@ -59,7 +59,51 @@ describe('Raster token URL source enrichment', () => {
       fetchImpl
     );
 
-    assert.equal(findings[0]?.artworkSource, 'https://ipfs.io/ipfs/bafy-original/artwork.html');
+    assert.equal(
+      findings[0]?.artworkSource,
+      'https://ipfs.filebase.io/ipfs/bafy-original/artwork.html'
+    );
+  });
+
+  test('rewrites a dead third-party IPFS gateway host to Filebase, keeping the CID path', async () => {
+    // Raster's own indexing has attached dead or non-resolving HTTPS gateway
+    // hosts to content_url in the wild (0prod.infura-ipfs.io, 1p.infura-ipfs.io).
+    // The CID is the contract, not the hostname serving it.
+    const cid = 'QmcGgeqDCDq8Pm9BB4eEzhBMd7rPSbot5Bk5fzpQgivKcS';
+    const coords = ethereumCoords('95');
+    const fetchImpl = rasterFetch({
+      [`https://kit.raster.art/token/ethereum/${CONTRACT}/95`]: {
+        metadata: { content_url: `https://0prod.infura-ipfs.io/ipfs/${cid}/index.html?x=1` },
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(`https://raster.art/token/ethereum/${CONTRACT}/95`),
+      [coords],
+      fetchImpl
+    );
+
+    assert.equal(
+      findings[0]?.artworkSource,
+      `https://ipfs.filebase.io/ipfs/${cid}/index.html?x=1`
+    );
+  });
+
+  test('leaves a plain HTTPS URL alone when its path is not a real CID', async () => {
+    const coords = ethereumCoords('95');
+    const fetchImpl = rasterFetch({
+      [`https://kit.raster.art/token/ethereum/${CONTRACT}/95`]: {
+        metadata: { content_url: 'https://ipfs.verse.works/ipfs/original-video' },
+      },
+    });
+
+    const findings = await resolveRasterArtworkSources(
+      new URL(`https://raster.art/token/ethereum/${CONTRACT}/95`),
+      [coords],
+      fetchImpl
+    );
+
+    assert.equal(findings[0]?.artworkSource, 'https://ipfs.verse.works/ipfs/original-video');
   });
 
   test('never mixes hashes and types from different Raster media pairs', async () => {
@@ -232,6 +276,27 @@ describe('Raster artwork source enrichment (GraphQL first)', () => {
       requests.filter((value) => value.includes('/token/')),
       []
     );
+  });
+
+  test('prefers the GraphQL normalized ipfs:// reference over a dead contentUrl gateway host', async () => {
+    // feral-file#3583: for the affected series, contentUrl carries a dead
+    // Infura mirror while normalizedContentUrl carries the same CID raw.
+    const cid = 'bafy-normalized-original';
+    const coords = [ethereumCoords('95')];
+    const fetchImpl = graphqlAwareFetch([], {
+      graphql: graphqlArtwork({
+        tokens: [
+          graphqlToken('95', {
+            contentUrl: 'https://0prod.infura-ipfs.io/ipfs/QmcGgeqDCDq8Pm9BB4eEzhBMd7rPSbot5Bk5fzpQgivKcS',
+            normalizedContentUrl: `ipfs://${cid}`,
+          }),
+        ],
+      }),
+    });
+
+    const findings = await resolveRasterArtworkSources(new URL(ARTWORK_URL), coords, fetchImpl);
+
+    assert.equal(findings[0]?.artworkSource, `https://ipfs.filebase.io/ipfs/${cid}`);
   });
 
   test('falls back to a kit detail only when neither contentUrl nor preview is usable', async () => {
@@ -616,6 +681,7 @@ interface GraphqlTokenNode {
   name: string | null;
   media: {
     contentUrl: string | null;
+    normalizedContentUrl: string | null;
     previewHash: string | null;
     previewType: string | null;
   };
@@ -626,6 +692,7 @@ function graphqlToken(
   overrides: Partial<{
     name: string | null;
     contentUrl: string | null;
+    normalizedContentUrl: string | null;
     previewHash: string | null;
     previewType: string | null;
   }> = {}
@@ -638,6 +705,7 @@ function graphqlToken(
     name: overrides.name ?? null,
     media: {
       contentUrl: overrides.contentUrl ?? null,
+      normalizedContentUrl: overrides.normalizedContentUrl ?? null,
       previewHash: overrides.previewHash ?? null,
       previewType: overrides.previewType ?? null,
     },
