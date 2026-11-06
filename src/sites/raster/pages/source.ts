@@ -12,15 +12,17 @@ import { parseRasterToken } from './token';
 const RASTER_KIT_ORIGIN = 'https://kit.raster.art';
 const RASTER_BITS_ORIGIN = 'https://bits.raster.art';
 /**
- * Every Raster IPFS reference -- a raw `ipfs://` URI or a plain HTTPS
- * gateway URL -- resolves through Filebase, never through whatever gateway
- * host Raster's own indexing happened to attach. Raster's own gateway
- * choices have gone dead or non-resolving in the wild (retired Infura
- * mirrors, a DNS-dead `onchfs.fxhash2.xyz`), and `ipfs.io` is known to
- * throttle non-browser fetches org-wide, so this resolver never serves
- * either (feral-file#3583, owner decision 2026-11-06).
+ * Filebase is this package's own choice of IPFS gateway for Raster content,
+ * not a gateway Raster itself operates or returns. Every Raster IPFS
+ * reference -- a raw `ipfs://` URI or a plain HTTPS gateway URL -- resolves
+ * through it, never through whatever gateway host Raster's own indexing
+ * happened to attach. Raster's own gateway choices have gone dead or
+ * non-resolving in the wild (retired Infura mirrors, a DNS-dead
+ * `onchfs.fxhash2.xyz`), and `ipfs.io` is known to throttle non-browser
+ * fetches org-wide, so this resolver never serves either (feral-file#3583,
+ * owner decision 2026-11-06).
  */
-const RASTER_IPFS_GATEWAY = 'https://ipfs.filebase.io/ipfs/';
+const FILEBASE_IPFS_GATEWAY = 'https://ipfs.filebase.io/ipfs/';
 /**
  * Kit token-detail lookups run 50 at a time: parallel enough that a large
  * webapp series finishes in a handful of rounds, bounded enough not to dogpile
@@ -344,7 +346,7 @@ function browserContentUrl(value: string | null | undefined): string | null {
   }
   if (candidate.startsWith('ipfs://')) {
     const path = candidate.slice('ipfs://'.length).replace(/^ipfs\//, '');
-    return path ? `${RASTER_IPFS_GATEWAY}${path}` : null;
+    return path ? `${FILEBASE_IPFS_GATEWAY}${path}` : null;
   }
   if (candidate.startsWith('ar://')) {
     const path = candidate.slice('ar://'.length);
@@ -356,7 +358,7 @@ function browserContentUrl(value: string | null | undefined): string | null {
       return null;
     }
     const ipfsPath = ipfsGatewayPath(url.pathname);
-    return ipfsPath ? `${RASTER_IPFS_GATEWAY}${ipfsPath}${url.search}${url.hash}` : url.toString();
+    return ipfsPath ? `${FILEBASE_IPFS_GATEWAY}${ipfsPath}${url.search}${url.hash}` : url.toString();
   } catch {
     return null;
   }
