@@ -12,12 +12,30 @@ import { parseRasterToken } from './token';
 const RASTER_KIT_ORIGIN = 'https://kit.raster.art';
 const RASTER_BITS_ORIGIN = 'https://bits.raster.art';
 /**
+ * Every Raster IPFS reference -- a raw `ipfs://` URI or a plain HTTPS
+ * gateway URL -- resolves through Filebase, never through whatever gateway
+ * host Raster's own indexing happened to attach. Raster's own gateway
+ * choices have gone dead or non-resolving in the wild (retired Infura
+ * mirrors, a DNS-dead `onchfs.fxhash2.xyz`), and `ipfs.io` is known to
+ * throttle non-browser fetches org-wide, so this resolver never serves
+ * either (feral-file#3583, owner decision 2026-11-06).
+ */
+const RASTER_IPFS_GATEWAY = 'https://ipfs.filebase.io/ipfs/';
+/**
  * Kit token-detail lookups run 50 at a time: parallel enough that a large
  * webapp series finishes in a handful of rounds, bounded enough not to dogpile
  * the API or a Worker's connection pool.
  */
 const DETAIL_FETCH_BATCH_SIZE = 50;
 
+/**
+ * The kit REST detail's media metadata. Unlike the GraphQL `Media` type,
+ * the kit `TokenMetadataModel` carries no separate normalized/raw reference
+ * (verified against https://kit.raster.art/openapi.json, 2026-11-06) --
+ * `content_url` is already a raw `ipfs://` URI when Raster's REST data has
+ * resolved to one, so `browserContentUrl` handles both forms this field can
+ * take without a second field to prefer.
+ */
 interface RasterMediaMetadata {
   content_url?: string | null;
   metadata_source_url?: string | null;
@@ -126,8 +144,7 @@ async function graphqlArtworkSources(
   // the one handler the CDN serves no rendition for.
   const needDetail = matches.filter(
     ({ token }) =>
-      !browserContentUrl(token.contentUrl) &&
-      !rasterPreviewUrl(token.previewHash, token.previewType)
+      !graphqlContentUrl(token) && !rasterPreviewUrl(token.previewHash, token.previewType)
   );
   const details = new Map<string, RasterTokenDetail | null>();
   await forEachBatch(needDetail, async ({ requested, token }) => {
@@ -146,7 +163,7 @@ async function graphqlArtworkSources(
     const key = coordsKey(requested);
     const detail = details.get(key) ?? null;
     const artworkSource =
-      browserContentUrl(token.contentUrl) ??
+      graphqlContentUrl(token) ??
       rasterPreviewUrl(token.previewHash, token.previewType) ??
       (detail ? mediaSource(detail.metadata) : null);
     if (!artworkSource) {
@@ -297,6 +314,18 @@ function optionalStandard(tokenStandard: string | null): Partial<ArtworkSourceFi
     : {};
 }
 
+/**
+ * graphqlContentUrl prefers the GraphQL media's normalized `ipfs://`
+ * reference over `contentUrl`: Raster's own `contentUrl` carries whatever
+ * HTTPS gateway host its indexing attached, which has been observed dead or
+ * non-resolving, while `normalizedContentUrl` carries the same content as a
+ * gateway-independent reference this package resolves through Filebase
+ * itself (feral-file#3583).
+ */
+function graphqlContentUrl(token: RasterGraphqlToken): string | null {
+  return browserContentUrl(token.normalizedContentUrl) ?? browserContentUrl(token.contentUrl);
+}
+
 function mediaSource(metadata: RasterMediaMetadata | null | undefined): string | null {
   const original = browserContentUrl(metadata?.content_url);
   if (original) {
@@ -315,7 +344,7 @@ function browserContentUrl(value: string | null | undefined): string | null {
   }
   if (candidate.startsWith('ipfs://')) {
     const path = candidate.slice('ipfs://'.length).replace(/^ipfs\//, '');
-    return path ? `https://ipfs.io/ipfs/${path}` : null;
+    return path ? `${RASTER_IPFS_GATEWAY}${path}` : null;
   }
   if (candidate.startsWith('ar://')) {
     const path = candidate.slice('ar://'.length);
@@ -323,10 +352,28 @@ function browserContentUrl(value: string | null | undefined): string | null {
   }
   try {
     const url = new URL(candidate);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return null;
+    }
+    const ipfsPath = ipfsGatewayPath(url.pathname);
+    return ipfsPath ? `${RASTER_IPFS_GATEWAY}${ipfsPath}${url.search}${url.hash}` : url.toString();
   } catch {
     return null;
   }
+}
+
+/**
+ * ipfsGatewayPath recognizes a `/ipfs/<cid>` path on any host. The CID is
+ * the contract, not the hostname serving it -- the same rule ff-app's
+ * `ipfsMediaCandidates` and ff-player's `isContentAddressed` apply when
+ * recognizing a plain gateway URL as IPFS content regardless of which host
+ * served it. A real CID is at least 46 characters (CIDv0's `Qm...` base58
+ * form); anything shorter is treated as an ordinary path segment rather than
+ * risking a false match on an unrelated URL that merely contains `/ipfs/`.
+ */
+function ipfsGatewayPath(pathname: string): string | null {
+  const match = /^\/ipfs\/([A-Za-z0-9]+)((?:\/[^?#]*)?)$/.exec(pathname);
+  return match && match[1].length >= 46 ? `${match[1]}${match[2]}` : null;
 }
 
 /**

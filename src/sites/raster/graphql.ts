@@ -23,6 +23,14 @@ export interface RasterGraphqlToken {
   tokenStandard: string | null;
   name: string | null;
   contentUrl: string | null;
+  /**
+   * The same content, already carried as a raw `ipfs://` reference rather
+   * than whatever HTTPS gateway host Raster's own indexing attached to
+   * `contentUrl` -- which has been observed dead or non-resolving (a retired
+   * Infura mirror, a DNS-dead onchfs host). Prefer this over `contentUrl`
+   * whenever present.
+   */
+  normalizedContentUrl: string | null;
   previewHash: string | null;
   previewType: string | null;
 }
@@ -66,6 +74,7 @@ interface RasterArtworkWithTokensResponse {
           name?: string | null;
           media?: {
             contentUrl?: string | null;
+            normalizedContentUrl?: string | null;
             previewHash?: string | null;
             previewType?: string | null;
           } | null;
@@ -88,7 +97,7 @@ const RASTER_ARTWORK_WITH_TOKENS_QUERY =
   ' tokens(first: $first, after: $after) {' +
   ' totalCount pageInfo { hasNextPage endCursor }' +
   ' nodes { chainId contractAddress tokenId tokenStandard name' +
-  ' media { contentUrl previewHash previewType } } } } }';
+  ' media { contentUrl normalizedContentUrl previewHash previewType } } } } }';
 
 /**
  * resolveRasterArtworkWithTokens resolves an artwork slug to its metadata and
@@ -184,6 +193,7 @@ export async function resolveRasterArtworkWithTokens(
         tokenStandard: row?.tokenStandard ?? null,
         name: row?.name ?? null,
         contentUrl: row?.media?.contentUrl ?? null,
+        normalizedContentUrl: row?.media?.normalizedContentUrl ?? null,
         previewHash: row?.media?.previewHash ?? null,
         previewType: row?.media?.previewType ?? null,
       };
