@@ -1,6 +1,8 @@
-import { cleanFindingArtist, httpUrl, sourceTokenResult } from '../../helpers';
+import { cleanFindingArtist, hasHostMatch, httpUrl, sourceTokenResult } from '../../helpers';
 import { tokenLimitTarget } from '../../limits';
 import type { ArtworkSourceFinding, IndexerChain, ParsedFindInput, TokenCoords } from '../../types';
+
+const DP1_DOCUMENT_HOSTS = ['feralfile.com'];
 
 const PLAYLIST_LINK_TITLE = 'DP-1 playlist';
 const CHANNEL_LINK_TITLE = 'DP-1 channel';
@@ -87,7 +89,10 @@ export async function resolveFeralFileDp1Data(
   const channelHref = extractDp1LinkHref(html, CHANNEL_LINK_TITLE, pageUrl);
   if (channelHref) {
     const channel = await fetchJson<Dp1Channel>(channelHref, fetchImpl);
-    const playlistUrls = channel?.playlists ?? [];
+    const playlistUrls = (channel?.playlists ?? []).flatMap((url) => {
+      const resolved = resolveDp1DocumentUrl(url, pageUrl);
+      return resolved ? [resolved] : [];
+    });
     if (playlistUrls.length > 0) {
       const items = await fetchFeralFileSeriesItems(playlistUrls, fetchImpl, limit);
       return { items, ...(channel?.title ? { title: channel.title } : {}) };
@@ -224,12 +229,20 @@ function coordsKey(coords: TokenCoords): string {
 /**
  * extractDp1LinkHref finds the href of the one `<link rel="alternate">` tag
  * whose `title` attribute matches, by that title alone -- never by guessing
- * the DP-1 document's URL from the page's own URL path.
+ * the DP-1 document's URL from the page's own URL path. Script, style,
+ * template and comment regions are stripped first, the same way every other
+ * adapter's HTML extractor does, so a `<link>`-shaped string embedded in page
+ * data (not a real tag) cannot be mistaken for the real declaration. The
+ * resolved href must also stay on a feralfile.com host: this document's
+ * content becomes trusted on-chain provenance and a playable artwork URL,
+ * not just a display title, so an off-host href is treated as absent rather
+ * than fetched.
  */
 function extractDp1LinkHref(html: string, title: string, base: URL): string | null {
   const linkTag = /<link\b[^>]*>/gi;
+  const visible = stripIgnoredHtmlRegions(html);
   let match: RegExpExecArray | null;
-  while ((match = linkTag.exec(html))) {
+  while ((match = linkTag.exec(visible))) {
     const tag = match[0];
     if (!/\brel\s*=\s*["']alternate["']/i.test(tag)) {
       continue;
@@ -242,13 +255,26 @@ function extractDp1LinkHref(html: string, title: string, base: URL): string | nu
     if (!href) {
       continue;
     }
-    try {
-      return new URL(href, base).toString();
-    } catch {
-      return null;
+    const resolved = resolveDp1DocumentUrl(href, base);
+    if (resolved) {
+      return resolved;
     }
   }
   return null;
+}
+
+function resolveDp1DocumentUrl(href: string, base: URL): string | null {
+  try {
+    const url = new URL(href, base);
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    return hasHostMatch(host, DP1_DOCUMENT_HOSTS) ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function stripIgnoredHtmlRegions(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->|<(script|style|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
 }
 
 async function fetchText(url: string, fetchImpl: typeof fetch): Promise<string | null> {

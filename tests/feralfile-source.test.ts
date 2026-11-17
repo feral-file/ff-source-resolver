@@ -240,6 +240,72 @@ describe('Feral File DP-1 document resolution', () => {
 
     assert.deepEqual(data, { items: [] });
   });
+
+  test('ignores a link-shaped string embedded in a script and still finds the real link', async () => {
+    const requested: string[] = [];
+    const planted =
+      '<script>var noise = \'<link rel="alternate" title="DP-1 playlist" href="https://evil.example/playlist.json">\';</script>' +
+      '<!-- <link rel="alternate" title="DP-1 playlist" href="https://evil.example/comment.json"> -->';
+    const html =
+      `<html><head>${planted}` +
+      '<link rel="alternate" type="application/json" href="https://feralfile.com/series/video-series/playlist.json" title="DP-1 playlist">' +
+      '</head><body></body></html>';
+    const fetchImpl = trackingFetch(requested, {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({ items: [] }),
+    });
+
+    await resolveFeralFileDp1Data(new URL('https://feralfile.com/series/video-series'), fetchImpl, html);
+
+    assert.deepEqual(requested, ['https://feralfile.com/series/video-series/playlist.json']);
+  });
+
+  test('refuses to fetch a declared DP-1 document whose href resolves off feralfile.com', async () => {
+    const requested: string[] = [];
+    const html =
+      '<html><head>' +
+      '<link rel="alternate" type="application/json" href="https://evil.example/playlist.json" title="DP-1 playlist">' +
+      '</head><body></body></html>';
+    const fetchImpl = trackingFetch(requested, {});
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      html
+    );
+
+    assert.deepEqual(data, { items: [] });
+    assert.deepEqual(requested, []);
+  });
+
+  test('skips a channel-listed series playlist whose URL resolves off feralfile.com', async () => {
+    const requested: string[] = [];
+    const fetchImpl = trackingFetch(requested, {
+      'https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json': JSON.stringify({
+        title: 'Ex Nihilo',
+        playlists: [
+          'https://evil.example/series-a/playlist.json',
+          'https://feralfile.com/series/series-b/playlist.json',
+        ],
+      }),
+      'https://feralfile.com/series/series-b/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/b.mp4',
+            provenance: { contract: { chain: 'tezos', address: TEZOS_COORDS.contract, tokenId: '2' } },
+          },
+        ],
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/exhibitions/ex-nihilo-a3c'),
+      fetchImpl,
+      EXHIBITION_PAGE_HTML
+    );
+
+    assert.equal(data.items.length, 1);
+    assert.ok(!requested.includes('https://evil.example/series-a/playlist.json'));
+  });
 });
 
 /**
