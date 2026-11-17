@@ -50,10 +50,13 @@ makes. Today that is Raster (wallets, slug, bio), fxhash (wallet, bio, avatar;
 collaborators for a collab contract), Objkt (wallets, bio, avatar, links),
 SuperRare (wallets, bio, avatar; API-resolved tokens only), Verse (slug, bio,
 links; series-query path only) and Feral File (wallets, bio, avatar, from the
-same DP-1 document request the adapter already makes for token identity). Art
-Blocks, OpenSea and
-NEORT publish no artist on the requests this package makes, so their findings
-carry none.
+same DP-1 document request the adapter already makes for token identity --
+today this is populated for a single-artwork page's token, since that is the
+only Feral File DP-1 document that currently carries artist data; a series or
+exhibition page's tokens resolve with no `artists` until Feral File's own
+publishing pipeline adds the field at the series level too). Art Blocks,
+OpenSea and NEORT publish no artist on the requests this package makes, so
+their findings carry none.
 Raw token coordinates do not identify a marketplace adapter and therefore
 cannot be enriched automatically.
 

@@ -140,6 +140,33 @@ describe('Feral File DP-1 document resolution', () => {
     ]);
   });
 
+  test('omits artists when a series item carries none, matching real series documents today', async () => {
+    // Confirmed live against production: a series' own playlist.json item's
+    // inlineManifest.metadata never carries `artists` in practice, unlike a
+    // single-artwork playlist.json item, which does (accepted, see README /
+    // the PR's Decisions).
+    const fetchImpl = trackingFetch([], {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/no-artist.mp4',
+            provenance: { contract: { chain: 'evm', address: ETH_COORDS.contract, tokenId: ETH_COORDS.tokenId } },
+            inlineManifest: { metadata: { title: 'Untitled' } },
+          },
+        ],
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      SERIES_PAGE_HTML
+    );
+    const findings = dp1ItemsToArtworkSourceFindings(data.items, [ETH_COORDS]);
+
+    assert.equal(findings[0]?.artists, undefined);
+  });
+
   test('resolves an exhibition through its channel document, bundling every series playlist', async () => {
     const fetchImpl = trackingFetch([], {
       'https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json': JSON.stringify({

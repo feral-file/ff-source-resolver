@@ -172,6 +172,15 @@ function mapDp1Chain(chain: string | undefined): IndexerChain | null {
  * matching DP-1 item carries. Coordinates that do not match any item --
  * including one on an unsupported chain -- are simply absent from the
  * result.
+ *
+ * In production today, only a single-artwork page's own DP-1 document
+ * carries `inlineManifest.metadata.artists` on its item; a series' own
+ * playlist (fetched directly for a series page, or as one of a channel's
+ * listed playlists for an exhibition page) does not, so a series or
+ * exhibition resolution currently yields findings with no `artists` --
+ * `artists` is read here exactly the same way regardless, so this will
+ * start crediting series/exhibition artists the moment Feral File's own
+ * publishing pipeline adds the field at that level, with no code change.
  */
 export function dp1ItemsToArtworkSourceFindings(
   items: readonly FeralFileDp1Item[],
