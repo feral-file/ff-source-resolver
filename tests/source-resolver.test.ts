@@ -519,17 +519,16 @@ describe('parseFindInput', () => {
     assert.ok(result.reason.includes('/artwork/'));
   });
 
-  test('Feral File artwork URL parses to ff-url marker', () => {
-    const result = parseFindInput('https://feralfile.com/exhibitions/artwork/12345');
+  test('Feral File artwork URL parses to ff-url marker without matching the path shape', () => {
+    const result = parseFindInput('https://feralfile.com/artworks/12345');
     assert.equal(result?.kind, 'ff-url');
     if (result?.kind !== 'ff-url') {
       throw new Error('narrowing');
     }
-    assert.equal(result.urlKind, 'artwork');
-    assert.equal(result.identifier, '12345');
+    assert.equal(result.identifier, 'artworks/12345');
   });
 
-  test('Feral File swapped artwork URL parses to ff-url marker', () => {
+  test('Old-shape Feral File artwork URL parses the same way, since resolution reads the live page', () => {
     const result = parseFindInput(
       'https://feralfile.com/exhibitions/artwork/f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf'
     );
@@ -537,29 +536,28 @@ describe('parseFindInput', () => {
     if (result?.kind !== 'ff-url') {
       throw new Error('narrowing');
     }
-    assert.equal(result.urlKind, 'artwork');
     assert.equal(
       result.identifier,
-      'f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf'
+      'exhibitions/artwork/f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf'
     );
   });
 
   test('Feral File series URL parses to ff-url marker', () => {
-    const result = parseFindInput('https://feralfile.com/exhibitions/series/some-slug');
+    const result = parseFindInput('https://feralfile.com/series/some-slug');
     assert.equal(result?.kind, 'ff-url');
     if (result?.kind !== 'ff-url') {
       throw new Error('narrowing');
     }
-    assert.equal(result.urlKind, 'series');
+    assert.equal(result.identifier, 'series/some-slug');
   });
 
-  test('Feral File show URL parses to ff-url marker', () => {
-    const result = parseFindInput('https://feralfile.com/exhibitions/shows/some-slug');
+  test('Feral File exhibition URL parses to ff-url marker', () => {
+    const result = parseFindInput('https://feralfile.com/exhibitions/some-slug');
     assert.equal(result?.kind, 'ff-url');
     if (result?.kind !== 'ff-url') {
       throw new Error('narrowing');
     }
-    assert.equal(result.urlKind, 'show');
+    assert.equal(result.identifier, 'exhibitions/some-slug');
   });
 
   test('empty input returns null', () => {
@@ -1560,9 +1558,9 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
-  test('Feral File show resolves all series artwork tokens through public API', async () => {
-    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/shows/ex-nihilo-a3c', {
-      fetch: feralFileShowFetch() as typeof fetch,
+  test('Feral File exhibition resolves every series token through its declared DP-1 channel', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/ex-nihilo-a3c', {
+      fetch: feralFileExhibitionFetch() as typeof fetch,
     });
 
     assert.equal(result.kind, 'tokens');
@@ -1578,8 +1576,8 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
-  test('Feral File series resolves artwork tokens through public API', async () => {
-    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/series/cosmos-simulacrum', {
+  test('Feral File series resolves artwork tokens through its declared DP-1 playlist', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/series/cosmos-simulacrum', {
       fetch: feralFileSeriesFetch() as typeof fetch,
     });
 
@@ -1595,8 +1593,8 @@ describe('resolveTokenInfos collection support', () => {
     ]);
   });
 
-  test('Feral File artwork resolves one token and title through public API', async () => {
-    const result = await resolveTokenInfos('https://feralfile.com/exhibitions/artwork/12345', {
+  test('Feral File artwork resolves one token and title through its declared DP-1 playlist', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/artworks/12345', {
       fetch: feralFileArtworkFetch() as typeof fetch,
     });
 
@@ -1607,6 +1605,18 @@ describe('resolveTokenInfos collection support', () => {
     assert.equal(result.method, 'api');
     assert.equal(result.title, 'Better Artwork Title');
     assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '9' }]);
+  });
+
+  test('Feral File page on an unsupported chain omits that item without erroring the page', async () => {
+    const result = await resolveTokenInfos('https://feralfile.com/series/legacy-series', {
+      fetch: feralFileLegacyChainFetch() as typeof fetch,
+    });
+
+    assert.equal(result.kind, 'tokens');
+    if (result.kind !== 'tokens') {
+      throw new Error('narrowing');
+    }
+    assert.deepEqual(result.coords, [{ chain: 'ethereum', contract: ETH_CONTRACT, tokenId: '3' }]);
   });
 });
 
@@ -2277,8 +2287,8 @@ describe('SuperRare DOM extraction', () => {
   });
 });
 
-describe('Feral File DOM extraction', () => {
-  test('ignores unrelated token paths because Feral File IDs need caller-owned API resolution', async () => {
+describe('Feral File single-token resolution', () => {
+  test('resolveTokenInfo does not resolve Feral File pages; only resolveTokenInfos walks the DP-1 document', async () => {
     const result = await resolveTokenInfo('https://feralfile.com/exhibitions/artwork/12345', {
       fetch: htmlFetch(`<a href="/items/ethereum/${ETH_CONTRACT}/1">Unrelated token</a>`) as typeof fetch,
     });
@@ -2719,75 +2729,123 @@ function fxhashIterationFetch(): (input: string | URL | Request, init?: RequestI
   };
 }
 
-function feralFileShowFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+function feralFileExhibitionFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url === 'https://feralfile.com/api/exhibitions/ex-nihilo-a3c') {
-      return Response.json({
-        result: { id: 'show-uuid', title: 'Ex Nihilo', series: [{ id: 'series-a' }, { id: 'series-b' }] },
+    if (url === 'https://feralfile.com/exhibitions/ex-nihilo-a3c') {
+      return feralFileHeadHtmlResponse({
+        playlist: 'https://feralfile.com/exhibitions/ex-nihilo-a3c/playlist.json',
+        channel: 'https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json',
       });
     }
-    if (url === 'https://feralfile.com/api/artworks?seriesID=series-a') {
+    if (url === 'https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json') {
       return Response.json({
-        result: [
-          { chain: 'ethereum', contractAddress: ETH_CONTRACT, tokenID: '1' },
-          { chain: 'polygon', contractAddress: ETH_CONTRACT, tokenID: '2' },
+        title: 'Ex Nihilo',
+        playlists: [
+          'https://feralfile.com/series/series-a/playlist.json',
+          'https://feralfile.com/series/series-b/playlist.json',
         ],
       });
     }
-    if (url === 'https://feralfile.com/api/artworks?seriesID=series-b') {
+    if (url === 'https://feralfile.com/series/series-a/playlist.json') {
       return Response.json({
-        result: [
-          { chain: 'ethereum', contractAddress: ETH_CONTRACT, tokenID: '2' },
-          { chain: 'tezos', contractAddress: TEZOS_CONTRACT, tokenID: '9201' },
+        items: [
+          feralFileDp1Item('evm', ETH_CONTRACT, '1'),
+          // An unsupported chain on one series item must not fail the page.
+          feralFileDp1Item('polygon', ETH_CONTRACT, '2'),
         ],
       });
     }
-    return new Response('<html>client shell only</html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    });
+    if (url === 'https://feralfile.com/series/series-b/playlist.json') {
+      return Response.json({
+        items: [feralFileDp1Item('evm', ETH_CONTRACT, '2'), feralFileDp1Item('tezos', TEZOS_CONTRACT, '9201')],
+      });
+    }
+    return new Response(null, { status: 404 });
   };
 }
 
 function feralFileSeriesFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url === 'https://feralfile.com/api/series/cosmos-simulacrum') {
-      return Response.json({ result: { id: 'series-uuid', title: 'Cosmos Simulacrum' } });
-    }
-    if (url === 'https://feralfile.com/api/artworks?seriesID=series-uuid') {
-      return Response.json({
-        result: [
-          { chain: 'ethereum', contractAddress: ETH_CONTRACT, tokenID: '7' },
-          { chain: 'tezos', contractAddress: TEZOS_CONTRACT, tokenID: '8' },
-        ],
+    if (url === 'https://feralfile.com/series/cosmos-simulacrum') {
+      return feralFileHeadHtmlResponse({
+        playlist: 'https://feralfile.com/series/cosmos-simulacrum/playlist.json',
       });
     }
-    return new Response('<html>client shell only</html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    });
+    if (url === 'https://feralfile.com/series/cosmos-simulacrum/playlist.json') {
+      return Response.json({
+        title: 'Cosmos Simulacrum',
+        items: [feralFileDp1Item('evm', ETH_CONTRACT, '7'), feralFileDp1Item('tezos', TEZOS_CONTRACT, '8')],
+      });
+    }
+    return new Response(null, { status: 404 });
   };
 }
 
 function feralFileArtworkFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
   return async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
-    if (url === 'https://feralfile.com/api/artworks/12345') {
+    if (url === 'https://feralfile.com/artworks/12345') {
+      return feralFileHeadHtmlResponse({ playlist: 'https://feralfile.com/artworks/12345/playlist.json' });
+    }
+    if (url === 'https://feralfile.com/artworks/12345/playlist.json') {
       return Response.json({
-        result: {
-          chain: 'ethereum',
-          contractAddress: ETH_CONTRACT,
-          tokenID: '9',
-          title: 'Better Artwork Title',
-        },
+        title: 'Better Artwork Title',
+        items: [feralFileDp1Item('evm', ETH_CONTRACT, '9')],
       });
     }
-    return new Response('<html>client shell only</html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    });
+    return new Response(null, { status: 404 });
+  };
+}
+
+function feralFileLegacyChainFetch(): (input: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url === 'https://feralfile.com/series/legacy-series') {
+      return feralFileHeadHtmlResponse({ playlist: 'https://feralfile.com/series/legacy-series/playlist.json' });
+    }
+    if (url === 'https://feralfile.com/series/legacy-series/playlist.json') {
+      return Response.json({
+        items: [
+          // A pre-current-chain Feral File edition: no address, chain "bitmark".
+          feralFileDp1Item('bitmark', undefined, 'legacy-id'),
+          feralFileDp1Item('evm', ETH_CONTRACT, '3'),
+        ],
+      });
+    }
+    return new Response(null, { status: 404 });
+  };
+}
+
+/**
+ * feralFileHeadHtmlResponse mocks a feralfile.com page's declared DP-1
+ * document links, the mechanism this package reads instead of the URL shape
+ * or a Feral File API.
+ */
+function feralFileHeadHtmlResponse(links: { playlist?: string; channel?: string }): Response {
+  const tags = [
+    links.playlist &&
+      `<link rel="alternate" type="application/json" href="${links.playlist}" title="DP-1 playlist">`,
+    links.channel &&
+      `<link rel="alternate" type="application/json" href="${links.channel}" title="DP-1 channel">`,
+  ]
+    .filter(Boolean)
+    .join('');
+  return new Response(`<html><head>${tags}</head><body></body></html>`, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html' },
+  });
+}
+
+function feralFileDp1Item(
+  chain: string,
+  address: string | undefined,
+  tokenId: string
+): Record<string, unknown> {
+  return {
+    source: `https://cdn.example/${tokenId}.mp4`,
+    provenance: { contract: { chain, address, tokenId } },
   };
 }
 

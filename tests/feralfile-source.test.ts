@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { resolveFeralFileArtworkSources } from '../src/sites/feralfile/pages/source';
+import { dp1ItemsToArtworkSourceFindings, resolveFeralFileDp1Data } from '../src/sites/feralfile/dp1';
 import type { TokenCoords } from '../src/types';
 
 const ETH_COORDS: TokenCoords = {
   chain: 'ethereum',
-  contract: '0xABCDEFabcdef1234567890ABCDEFabcdef123456',
+  contract: '0xabcdefabcdef1234567890abcdef1234567890ab',
   tokenId: '101',
 };
 const TEZOS_COORDS: TokenCoords = {
@@ -14,279 +14,366 @@ const TEZOS_COORDS: TokenCoords = {
   tokenId: '22931',
 };
 
-describe('Feral File artwork source enrichment', () => {
-  test('resolves a relative interactive preview without requesting its thumbnail', async () => {
+const ARTWORK_PAGE_HTML =
+  '<html><head>' +
+  '<link rel="alternate" type="application/json" href="https://feralfile.com/artworks/artworkid/playlist.json" title="DP-1 playlist">' +
+  '</head><body></body></html>';
+
+const SERIES_PAGE_HTML =
+  '<html><head>' +
+  '<link rel="alternate" type="application/json" href="https://feralfile.com/series/video-series/playlist.json" title="DP-1 playlist">' +
+  '</head><body></body></html>';
+
+const EXHIBITION_PAGE_HTML =
+  '<html><head>' +
+  '<link rel="alternate" type="application/json" href="https://feralfile.com/exhibitions/ex-nihilo-a3c/playlist.json" title="DP-1 playlist">' +
+  '<link rel="alternate" type="application/json" href="https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json" title="DP-1 channel">' +
+  '</head><body></body></html>';
+
+describe('Feral File DP-1 document resolution', () => {
+  test('reads a single artwork from the page\'s declared DP-1 playlist', async () => {
     const requested: string[] = [];
-    const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
-      const url = input.toString();
-      requested.push(url);
-      if (url === 'https://feralfile.com/api/artworks/artworkid?includeArtist=true') {
-        return Response.json({
-          result: {
-            seriesID: 'series-id',
-            index: 4,
-            chain: 'ethereum',
-            contractAddress: ETH_COORDS.contract.toLowerCase(),
-            tokenID: 101,
-            previewURI: 'previews/series-id/version/?edition_number=4',
-            thumbnailURI: 'thumbnails/series-id/version/large.jpg',
+    const fetchImpl = trackingFetch(requested, {
+      'https://feralfile.com/artworks/artworkid': ARTWORK_PAGE_HTML,
+      'https://feralfile.com/artworks/artworkid/playlist.json': JSON.stringify({
+        title: 'Artwork Title',
+        items: [
+          {
+            source: 'https://cdn.artworks.feralfile.io/previews/one.mp4',
+            provenance: {
+              contract: {
+                chain: 'evm',
+                address: ETH_COORDS.contract,
+                tokenId: ETH_COORDS.tokenId,
+                standard: 'erc721',
+                uri: 'https://metadata.example/token.json',
+              },
+            },
           },
-        });
-      }
-      return new Response(null, { status: 404 });
+        ],
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/artworks/artworkid'),
+      fetchImpl,
+      null
+    );
+
+    assert.equal(data.title, 'Artwork Title');
+    assert.equal(data.items.length, 1);
+    assert.deepEqual(requested, [
+      'https://feralfile.com/artworks/artworkid',
+      'https://feralfile.com/artworks/artworkid/playlist.json',
+    ]);
+
+    const findings = dp1ItemsToArtworkSourceFindings(data.items, [ETH_COORDS]);
+    assert.deepEqual(findings, [
+      {
+        coords: ETH_COORDS,
+        artworkSource: 'https://cdn.artworks.feralfile.io/previews/one.mp4',
+        metadataUri: 'https://metadata.example/token.json',
+        standard: 'erc721',
+      },
+    ]);
+  });
+
+  test('converts an ipfs:// metadata URI to a public gateway URL', () => {
+    const item = {
+      source: 'https://cdn.artworks.feralfile.io/previews/one.mp4',
+      provenance: {
+        contract: {
+          chain: 'evm',
+          address: ETH_COORDS.contract,
+          tokenId: ETH_COORDS.tokenId,
+          standard: 'erc721',
+          uri: 'ipfs://Qme4tWAgSomeRealCidFromProduction/101',
+        },
+      },
     };
 
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/artwork/artworkid'),
-      [ETH_COORDS],
-      fetchImpl as typeof fetch
-    );
+    const findings = dp1ItemsToArtworkSourceFindings([item], [ETH_COORDS]);
 
     assert.deepEqual(findings, [
       {
         coords: ETH_COORDS,
-        artworkSource:
-          'https://cdn.feralfileassets.com/previews/series-id/version/?edition_number=4',
+        artworkSource: 'https://cdn.artworks.feralfile.io/previews/one.mp4',
+        metadataUri: 'https://ipfs.io/ipfs/Qme4tWAgSomeRealCidFromProduction/101',
+        standard: 'erc721',
       },
     ]);
-    assert.deepEqual(requested, ['https://feralfile.com/api/artworks/artworkid?includeArtist=true']);
   });
 
-  test('prefers an HLS stream and pairs only requested coordinates', async () => {
-    const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/series/video-series': {
-        id: 'series-id',
-        medium: 'video',
-      },
-      'https://feralfile.com/api/artworks?seriesID=series-id': [
-        {
-          chain: 'ethereum',
-          contractAddress: ETH_COORDS.contract,
-          tokenID: ETH_COORDS.tokenId,
-          previewURI: 'previews/video/preview.mp4',
-          previewDisplay: { HLS: 'https://stream.example/video/master.m3u8' },
-        },
-        {
-          chain: 'ethereum',
-          contractAddress: ETH_COORDS.contract,
-          tokenID: 'not-requested',
-          previewURI: 'previews/video/other.mp4',
-        },
-      ],
+  test('reuses already-fetched page HTML instead of requesting the page twice', async () => {
+    const requested: string[] = [];
+    const fetchImpl = trackingFetch(requested, {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({
+        title: 'Video Series',
+        items: [],
+      }),
     });
 
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/series/video-series'),
-      [ETH_COORDS],
-      fetchImpl
+    await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      SERIES_PAGE_HTML
     );
 
-    assert.deepEqual(findings, [
-      {
-        coords: ETH_COORDS,
-        artworkSource: 'https://stream.example/video/master.m3u8',
-      },
-    ]);
+    assert.deepEqual(requested, ['https://feralfile.com/series/video-series/playlist.json']);
   });
 
-  test('credits the series artist and collaborators from the embedded alumni account', async () => {
-    const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/series/collab-series': {
-        id: 'series-id',
-        medium: 'video',
-        artist: {
-          ID: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da',
-          alumniAccount: {
-            alias: 'Jonas Lund',
-            fullName: 'Jonas Lund',
-            slug: 'jonas-lund-yw9',
-            addresses: { ethereum: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da', tezos: 'tz1JonasLund' },
-            associatedAddresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da', '0xAssociated'],
-            avatarURI: 'avatars/aDADzvsf/1638360786',
-            avatarDisplay: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
-            collaborationAlumniAccounts: [
-              {
-                // No alias: the full name stands in.
-                alias: '',
-                fullName: 'Collab Partner',
-                slug: 'collab-partner',
-                addresses: { ethereum: '0xPartner' },
-                avatarDisplay: null,
+  test('credits the artist from the item\'s inline manifest', async () => {
+    const fetchImpl = trackingFetch([], {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({
+        title: 'Video Series',
+        items: [
+          {
+            source: 'https://stream.example/video/master.m3u8',
+            provenance: {
+              contract: { chain: 'evm', address: ETH_COORDS.contract, tokenId: ETH_COORDS.tokenId },
+            },
+            inlineManifest: {
+              metadata: {
+                artists: [
+                  {
+                    name: 'Jonas Lund',
+                    addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da', 'tz1JonasLund'],
+                    avatar: { uri: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public' },
+                    biographies: [{ text: 'Artist bio.' }],
+                  },
+                ],
               },
-              null,
-            ],
+            },
           },
-        },
-      },
-      'https://feralfile.com/api/artworks?seriesID=series-id': [
-        {
-          seriesID: 'series-id',
-          chain: 'ethereum',
-          contractAddress: ETH_COORDS.contract,
-          tokenID: ETH_COORDS.tokenId,
-          previewURI: 'previews/video/preview.mp4',
-        },
-      ],
+        ],
+      }),
     });
 
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/series/collab-series'),
-      [ETH_COORDS],
-      fetchImpl
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      SERIES_PAGE_HTML
     );
+    const findings = dp1ItemsToArtworkSourceFindings(data.items, [ETH_COORDS]);
 
     assert.deepEqual(findings[0]?.artists, [
       {
         name: 'Jonas Lund',
-        addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da', 'tz1JonasLund', '0xAssociated'],
-        slug: 'jonas-lund-yw9',
+        addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da', 'tz1JonasLund'],
         avatar: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+        bio: 'Artist bio.',
       },
-      { name: 'Collab Partner', addresses: ['0xPartner'], slug: 'collab-partner' },
     ]);
   });
 
-  test('credits a single artwork from the artist its own request embeds', async () => {
-    // The artwork record carries no artist, but `?includeArtist=true` makes
-    // the same request attach a partial series with the alumni account, so a
-    // direct preview is credited with exactly one request.
-    const requests: string[] = [];
-    const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/artworks/directartwork?includeArtist=true': {
-        id: 'directartwork',
-        seriesID: 'series-id',
-        chain: 'ethereum',
-        contractAddress: ETH_COORDS.contract,
-        tokenID: ETH_COORDS.tokenId,
-        previewURI: 'https://cdn.example/direct.mp4',
-        series: {
-          id: 'series-id',
-          medium: 'video',
-          artist: {
-            alumniAccount: {
-              alias: 'Jonas Lund',
-              slug: 'jonas-lund-yw9',
-              addresses: { ethereum: '0x67e01477c7B463397313bB64a111D0baB40Ea3Da' },
-              avatarDisplay: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
-            },
-          },
-        },
-      },
-    });
-    const counting = (async (input: string | URL | Request, init?: RequestInit) => {
-      requests.push(String(input));
-      return fetchImpl(input, init);
-    }) as typeof fetch;
-
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/artwork/directartwork'),
-      [ETH_COORDS],
-      counting
-    );
-
-    assert.deepEqual(requests, [
-      'https://feralfile.com/api/artworks/directartwork?includeArtist=true',
-    ]);
-    assert.deepEqual(findings, [
-      {
-        coords: ETH_COORDS,
-        artworkSource: 'https://cdn.example/direct.mp4',
-        artists: [
+  test('omits artists when a series item carries none, matching real series documents today', async () => {
+    // Confirmed live against production: a series' own playlist.json item's
+    // inlineManifest.metadata never carries `artists` in practice, unlike a
+    // single-artwork playlist.json item, which does (accepted, see README /
+    // the PR's Decisions).
+    const fetchImpl = trackingFetch([], {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({
+        items: [
           {
-            name: 'Jonas Lund',
-            addresses: ['0x67e01477c7B463397313bB64a111D0baB40Ea3Da'],
-            slug: 'jonas-lund-yw9',
-            avatar: 'https://imagedelivery.net/iCRs13uicXIPOWrnuHbaKA/f894b291/public',
+            source: 'https://cdn.example/no-artist.mp4',
+            provenance: { contract: { chain: 'evm', address: ETH_COORDS.contract, tokenId: ETH_COORDS.tokenId } },
+            inlineManifest: { metadata: { title: 'Untitled' } },
           },
         ],
-      },
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      SERIES_PAGE_HTML
+    );
+    const findings = dp1ItemsToArtworkSourceFindings(data.items, [ETH_COORDS]);
+
+    assert.equal(findings[0]?.artists, undefined);
+  });
+
+  test('resolves an exhibition through its channel document, bundling every series playlist', async () => {
+    const fetchImpl = trackingFetch([], {
+      'https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json': JSON.stringify({
+        title: 'Ex Nihilo',
+        playlists: [
+          'https://feralfile.com/series/series-a/playlist.json',
+          'https://feralfile.com/series/series-b/playlist.json',
+        ],
+      }),
+      'https://feralfile.com/series/series-a/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/a.mp4',
+            provenance: { contract: { chain: 'evm', address: ETH_COORDS.contract, tokenId: '1' } },
+          },
+        ],
+      }),
+      'https://feralfile.com/series/series-b/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/b.mp4',
+            provenance: { contract: { chain: 'tezos', address: TEZOS_COORDS.contract, tokenId: '2' } },
+          },
+        ],
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/exhibitions/ex-nihilo-a3c'),
+      fetchImpl,
+      EXHIBITION_PAGE_HTML
+    );
+
+    assert.equal(data.title, 'Ex Nihilo');
+    assert.equal(data.items.length, 2);
+  });
+
+  test('omits an item on a chain this package does not support, such as bitmark', async () => {
+    const fetchImpl = trackingFetch([], {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/legacy.mp4',
+            provenance: { contract: { chain: 'bitmark', tokenId: 'legacy-id' } },
+          },
+          {
+            source: 'https://cdn.example/current.mp4',
+            provenance: { contract: { chain: 'evm', address: ETH_COORDS.contract, tokenId: ETH_COORDS.tokenId } },
+          },
+        ],
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      SERIES_PAGE_HTML
+    );
+    const findings = dp1ItemsToArtworkSourceFindings(data.items, [ETH_COORDS]);
+
+    assert.deepEqual(findings, [
+      { coords: ETH_COORDS, artworkSource: 'https://cdn.example/current.mp4' },
     ]);
-  });
-
-  test('makes an unvaried Cloudflare image URL browser-loadable', async () => {
-    const cloudflare =
-      'https://imagedelivery.net/account/image-id';
-    const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/artworks/artworkid?includeArtist=true': {
-        chain: 'ethereum',
-        contractAddress: ETH_COORDS.contract,
-        tokenID: ETH_COORDS.tokenId,
-        metadata: { previewCloudFlareURL: cloudflare },
-      },
-    });
-
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/artwork/artworkid'),
-      [ETH_COORDS],
-      fetchImpl
-    );
-
-    assert.equal(findings[0]?.artworkSource, `${cloudflare}/public`);
-  });
-
-  test('uses a software series preview directory when an artwork has no direct preview', async () => {
-    const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/series/software-series': {
-        id: 'series-id',
-        medium: 'software',
-        uniquePreviewPath: 'previews/series-id/version/_unique-previews',
-      },
-      'https://feralfile.com/api/artworks?seriesID=series-id': [
-        {
-          seriesID: 'series-id',
-          index: 8,
-          chain: 'ethereum',
-          contractAddress: ETH_COORDS.contract,
-          tokenID: ETH_COORDS.tokenId,
-        },
-      ],
-    });
-
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/series/software-series'),
-      [ETH_COORDS],
-      fetchImpl
-    );
-
-    assert.equal(
-      findings[0]?.artworkSource,
-      'https://cdn.feralfileassets.com/previews/series-id/version/_unique-previews/8/'
-    );
   });
 
   test('does not pair differently cased Tezos contracts', async () => {
-    const fetchImpl = feralFileFetch({
-      'https://feralfile.com/api/series/tezos-series': {
-        id: 'tezos-series',
-        medium: 'software',
-      },
-      'https://feralfile.com/api/artworks?seriesID=tezos-series': [
-        {
-          chain: 'tezos',
-          contractAddress: TEZOS_COORDS.contract.toLowerCase(),
-          tokenID: TEZOS_COORDS.tokenId,
-          previewURI: 'previews/wrong-token/index.html',
-        },
-      ],
+    const fetchImpl = trackingFetch([], {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/wrong.mp4',
+            provenance: {
+              contract: { chain: 'tezos', address: TEZOS_COORDS.contract.toLowerCase(), tokenId: TEZOS_COORDS.tokenId },
+            },
+          },
+        ],
+      }),
     });
 
-    const findings = await resolveFeralFileArtworkSources(
-      new URL('https://feralfile.com/exhibitions/series/tezos-series'),
-      [TEZOS_COORDS],
-      fetchImpl
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      SERIES_PAGE_HTML
     );
+    const findings = dp1ItemsToArtworkSourceFindings(data.items, [TEZOS_COORDS]);
 
     assert.deepEqual(findings, []);
   });
+
+  test('returns no items when the page declares no DP-1 document', async () => {
+    const fetchImpl = trackingFetch([], {});
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/some/other/page'),
+      fetchImpl,
+      '<html><head></head><body>no DP-1 links here</body></html>'
+    );
+
+    assert.deepEqual(data, { items: [] });
+  });
+
+  test('ignores a link-shaped string embedded in a script and still finds the real link', async () => {
+    const requested: string[] = [];
+    const planted =
+      '<script>var noise = \'<link rel="alternate" title="DP-1 playlist" href="https://evil.example/playlist.json">\';</script>' +
+      '<!-- <link rel="alternate" title="DP-1 playlist" href="https://evil.example/comment.json"> -->';
+    const html =
+      `<html><head>${planted}` +
+      '<link rel="alternate" type="application/json" href="https://feralfile.com/series/video-series/playlist.json" title="DP-1 playlist">' +
+      '</head><body></body></html>';
+    const fetchImpl = trackingFetch(requested, {
+      'https://feralfile.com/series/video-series/playlist.json': JSON.stringify({ items: [] }),
+    });
+
+    await resolveFeralFileDp1Data(new URL('https://feralfile.com/series/video-series'), fetchImpl, html);
+
+    assert.deepEqual(requested, ['https://feralfile.com/series/video-series/playlist.json']);
+  });
+
+  test('refuses to fetch a declared DP-1 document whose href resolves off feralfile.com', async () => {
+    const requested: string[] = [];
+    const html =
+      '<html><head>' +
+      '<link rel="alternate" type="application/json" href="https://evil.example/playlist.json" title="DP-1 playlist">' +
+      '</head><body></body></html>';
+    const fetchImpl = trackingFetch(requested, {});
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/series/video-series'),
+      fetchImpl,
+      html
+    );
+
+    assert.deepEqual(data, { items: [] });
+    assert.deepEqual(requested, []);
+  });
+
+  test('skips a channel-listed series playlist whose URL resolves off feralfile.com', async () => {
+    const requested: string[] = [];
+    const fetchImpl = trackingFetch(requested, {
+      'https://feralfile.com/exhibitions/ex-nihilo-a3c/channel.json': JSON.stringify({
+        title: 'Ex Nihilo',
+        playlists: [
+          'https://evil.example/series-a/playlist.json',
+          'https://feralfile.com/series/series-b/playlist.json',
+        ],
+      }),
+      'https://feralfile.com/series/series-b/playlist.json': JSON.stringify({
+        items: [
+          {
+            source: 'https://cdn.example/b.mp4',
+            provenance: { contract: { chain: 'tezos', address: TEZOS_COORDS.contract, tokenId: '2' } },
+          },
+        ],
+      }),
+    });
+
+    const data = await resolveFeralFileDp1Data(
+      new URL('https://feralfile.com/exhibitions/ex-nihilo-a3c'),
+      fetchImpl,
+      EXHIBITION_PAGE_HTML
+    );
+
+    assert.equal(data.items.length, 1);
+    assert.ok(!requested.includes('https://evil.example/series-a/playlist.json'));
+  });
 });
 
-function feralFileFetch(
-  responses: Record<string, unknown>
-): typeof fetch {
+/**
+ * trackingFetch builds a deterministic fetch mock over a URL -> body map,
+ * recording every request URL it was asked to resolve.
+ */
+function trackingFetch(requested: string[], responses: Record<string, string>): typeof fetch {
   return (async (input: string | URL | Request): Promise<Response> => {
-    const result = responses[input.toString()];
-    return result === undefined
-      ? new Response(null, { status: 404 })
-      : Response.json({ result });
+    const url = input.toString();
+    requested.push(url);
+    const body = responses[url];
+    if (body === undefined) {
+      return new Response(null, { status: 404 });
+    }
+    const contentType = body.trimStart().startsWith('<') ? 'text/html' : 'application/json';
+    return new Response(body, { status: 200, headers: { 'Content-Type': contentType } });
   }) as typeof fetch;
 }

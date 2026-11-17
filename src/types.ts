@@ -85,12 +85,15 @@ export type MarketplaceSource =
   | 'verse'
   | 'raster';
 
-export type FeralFileUrlKind = 'artwork' | 'series' | 'show';
-
 export type ParsedFindInput =
   | { kind: 'token'; coords: TokenCoords; source: 'raw' | MarketplaceSource }
   | { kind: 'address'; chain: IndexerChain; address: string }
-  | { kind: 'ff-url'; urlKind: FeralFileUrlKind; identifier: string }
+  /**
+   * A feralfile.com URL of any shape. `identifier` is the page's path, kept
+   * only as a display fallback -- resolution reads the page's own declared
+   * DP-1 document (see src/sites/feralfile/dp1.ts), never the path shape.
+   */
+  | { kind: 'ff-url'; identifier: string }
   | { kind: 'objkt-collection'; slug: string }
   | { kind: 'objkt-alias'; alias: string; tokenId: string }
   | { kind: 'ab-collection'; slug: string }
