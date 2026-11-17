@@ -78,6 +78,32 @@ describe('Feral File DP-1 document resolution', () => {
     ]);
   });
 
+  test('converts an ipfs:// metadata URI to a public gateway URL', () => {
+    const item = {
+      source: 'https://cdn.artworks.feralfile.io/previews/one.mp4',
+      provenance: {
+        contract: {
+          chain: 'evm',
+          address: ETH_COORDS.contract,
+          tokenId: ETH_COORDS.tokenId,
+          standard: 'erc721',
+          uri: 'ipfs://Qme4tWAgSomeRealCidFromProduction/101',
+        },
+      },
+    };
+
+    const findings = dp1ItemsToArtworkSourceFindings([item], [ETH_COORDS]);
+
+    assert.deepEqual(findings, [
+      {
+        coords: ETH_COORDS,
+        artworkSource: 'https://cdn.artworks.feralfile.io/previews/one.mp4',
+        metadataUri: 'https://ipfs.io/ipfs/Qme4tWAgSomeRealCidFromProduction/101',
+        standard: 'erc721',
+      },
+    ]);
+  });
+
   test('reuses already-fetched page HTML instead of requesting the page twice', async () => {
     const requested: string[] = [];
     const fetchImpl = trackingFetch(requested, {

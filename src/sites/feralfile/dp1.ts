@@ -7,6 +7,22 @@ const DP1_DOCUMENT_HOSTS = ['feralfile.com'];
 const PLAYLIST_LINK_TITLE = 'DP-1 playlist';
 const CHANNEL_LINK_TITLE = 'DP-1 channel';
 
+const IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
+
+/**
+ * ipfsToHttp converts an `ipfs://<cid>/...` URI to a public gateway URL, the
+ * same way every sibling adapter does before handing a value to `httpUrl` --
+ * real Feral File DP-1 documents declare `provenance.contract.uri` as an
+ * `ipfs://` reference, which `httpUrl` would otherwise reject outright.
+ */
+function ipfsToHttp(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (!/^ipfs:\/\//i.test(trimmed)) return trimmed;
+  const path = trimmed.replace(/^ipfs:\/\/(?:ipfs\/)?/i, '').replace(/^\/+/, '');
+  return path ? `${IPFS_GATEWAY}${path}` : null;
+}
+
 interface Dp1Contract {
   chain?: string;
   address?: string;
@@ -199,7 +215,7 @@ export function dp1ItemsToArtworkSourceFindings(
       continue;
     }
     const artists = feralFileArtists(item.inlineManifest?.metadata?.artists);
-    const metadataUri = httpUrl(item.provenance?.contract?.uri);
+    const metadataUri = httpUrl(ipfsToHttp(item.provenance?.contract?.uri));
     const standard = dp1Standard(item.provenance?.contract?.standard);
     findings.push({
       coords,
