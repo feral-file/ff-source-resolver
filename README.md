@@ -49,8 +49,9 @@ fetched just to fill it: every profile rides on a request the adapter already
 makes. Today that is Raster (wallets, slug, bio), fxhash (wallet, bio, avatar;
 collaborators for a collab contract), Objkt (wallets, bio, avatar, links),
 SuperRare (wallets, bio, avatar; API-resolved tokens only), Verse (slug, bio,
-links; series-query path only) and Feral File (wallets, slug, avatar — a single artwork asks its own
-request for the artist with `?includeArtist=true`). Art Blocks, OpenSea and
+links; series-query path only) and Feral File (wallets, bio, avatar, from the
+same DP-1 document request the adapter already makes for token identity). Art
+Blocks, OpenSea and
 NEORT publish no artist on the requests this package makes, so their findings
 carry none.
 Raw token coordinates do not identify a marketplace adapter and therefore
@@ -86,7 +87,13 @@ data:
 - fxhash project pages through the public GraphQL API; direct FX1 tokens use
   keyless TzKT token metadata because fxhash internal object ids differ from
   on-chain token ids.
-- Feral File show and series pages through public Feral File APIs.
+- Feral File artwork, series, and exhibition pages (any URL shape, old or
+  new -- an old `/exhibitions/artwork|series|shows/...` URL 301-redirects to
+  the current one) through the DP-1 document the live page itself declares
+  as a `<link rel="alternate" title="DP-1 playlist">` (and, for an exhibition
+  that bundles multiple series, a second `title="DP-1 channel">` link to the
+  document that bundles each series' own playlist). No Feral File API is
+  called and no URL path shape is parsed to decide what a page is.
 - OpenSea collection pages through embedded item JSON or rendered item cards;
   the documented full collection API requires an API key, so it stays outside
   this keyless package.

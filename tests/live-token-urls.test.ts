@@ -59,7 +59,7 @@ type ExpectedParsedInput =
   | { kind: 'neort-art'; id: string }
   | { kind: 'verse-series'; slug: string }
   | { kind: 'raster-artwork'; slug: string }
-  | { kind: 'ff-url'; urlKind: string; identifier: string };
+  | { kind: 'ff-url'; identifier: string };
 
 const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
   {
@@ -341,10 +341,13 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
     source: 'feralfile',
     page: 'artwork',
     url: 'https://feralfile.com/exhibitions/artwork/f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
+    // The old URL 301-redirects to the rebuilt site's flat scheme (issue #25).
+    acceptedFinalUrls: [
+      'https://feralfile.com/artworks/f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
+    ],
     expected: {
       kind: 'ff-url',
-      urlKind: 'artwork',
-      identifier: 'f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
+      identifier: 'exhibitions/artwork/f0240e04d64717e319584957f6a83954b029254ad1260b6320472ea8c0c5b1cf',
     },
     expectedArtworkSource: /^https:\/\//,
     browserNote: 'Browser title: Feral File | Exhibitions.',
@@ -353,7 +356,9 @@ const LIVE_SITE_URL_FIXTURES: LiveSiteUrlFixture[] = [
     source: 'feralfile',
     page: 'show',
     url: 'https://feralfile.com/exhibitions/shows/ex-nihilo-a3c',
-    expected: { kind: 'ff-url', urlKind: 'show', identifier: 'ex-nihilo-a3c' },
+    // The old URL 301-redirects to the rebuilt site's flat scheme (issue #25).
+    acceptedFinalUrls: ['https://feralfile.com/exhibitions/ex-nihilo-a3c'],
+    expected: { kind: 'ff-url', identifier: 'exhibitions/shows/ex-nihilo-a3c' },
     browserNote: 'Browser title: Experience the Ex Nihilo art exhibition on Feral File.',
   },
 ];
@@ -817,7 +822,6 @@ function assertParsedInput(
     case 'ff-url':
       assert.equal(actual.kind, 'ff-url');
       if (actual.kind === 'ff-url') {
-        assert.equal(actual.urlKind, expected.urlKind);
         assert.equal(actual.identifier, expected.identifier);
       }
       return;

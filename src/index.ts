@@ -11,7 +11,6 @@ export {
 } from './validation';
 export type {
   ArtworkSourceFinding,
-  FeralFileUrlKind,
   FindingArtist,
   FindingArtistLink,
   HeadlessPageRenderer,
